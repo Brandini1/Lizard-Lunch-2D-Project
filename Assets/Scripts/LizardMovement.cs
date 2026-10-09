@@ -26,6 +26,19 @@ public sealed class LizardMovement : MonoBehaviour
         set => moveSpeed = Mathf.Max(0f, value);
     }
 
+    public Vector2 FacingDirection => facing == 0 ? Vector2.down : facing == 1 ? Vector2.up
+                                    : facing == 2 ? Vector2.left : Vector2.right;
+
+    public void FaceDirection(Vector2 direction)
+    {
+        if (direction == Vector2.zero) return;
+
+        facing = Mathf.Abs(direction.x) > Mathf.Abs(direction.y)
+            ? (direction.x < 0f ? 2 : 3)
+            : (direction.y < 0f ? 0 : 1);
+        ShowFrame(1);
+    }
+
     private void Awake()
     {
         lizardBody = GetComponent<Rigidbody2D>() ?? gameObject.AddComponent<Rigidbody2D>();
