@@ -41,6 +41,8 @@ public static class SetupLizardLunch
             player.AddComponent<LizardMovement>();
         if (player.GetComponent<LizardTongue>() == null)
             player.AddComponent<LizardTongue>();
+        if (player.GetComponent<FlyGame>() == null)
+            player.AddComponent<FlyGame>();
 
         Camera gameCamera = Camera.main;
         if (gameCamera != null)
@@ -52,7 +54,7 @@ public static class SetupLizardLunch
 
         EditorSceneManager.MarkSceneDirty(movementScene);
         EditorSceneManager.SaveScene(movementScene);
-        Debug.Log("Lizard Lunch is ready. Move with WASD or arrow keys, and click to shoot the tongue.");
+        Debug.Log("Lizard Lunch is ready. Move with WASD or arrow keys, and click to catch flies.");
     }
 
     internal static void ConfigureSheet(TextureImporter sheetImporter)

@@ -22,6 +22,10 @@ public sealed class LizardTongue : MonoBehaviour
     private float nextShotTime;
     private bool isShooting;
 
+    public bool IsOut => isShooting;
+    public Vector2 StartPoint => tongueCenter.GetPosition(0);
+    public Vector2 TipPoint => tongueCenter.GetPosition(1);
+
     private void Awake()
     {
         lizardMovement = GetComponent<LizardMovement>();
