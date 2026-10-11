@@ -11,6 +11,8 @@ public sealed class FlyGame : MonoBehaviour
     private GUIStyle scoreStyle;
     private int score;
     private bool caughtThisFlick;
+    private Vector2 nextPerch;
+    private float restUntil;
 
     private void Start()
     {
@@ -22,6 +24,23 @@ public sealed class FlyGame : MonoBehaviour
         picture.sprite = flySprite;
         picture.sortingOrder = 2;
         fly.transform.position = new Vector3(0f, -2.7f, 0f);
+        nextPerch = NearbySpot(fly.transform.position);
+        restUntil = Time.time + 0.8f;
+    }
+
+    private void Update()
+    {
+        if (fly == null || Time.time < restUntil) return;
+
+        Vector2 here = fly.transform.position;
+        if ((nextPerch - here).sqrMagnitude < 0.01f)
+        {
+            nextPerch = NearbySpot(here);
+            restUntil = Time.time + Random.Range(0.2f, 0.6f);
+            return;
+        }
+
+        fly.transform.position = Vector2.MoveTowards(here, nextPerch, 1.5f * Time.deltaTime);
     }
 
     private void LateUpdate()
@@ -58,6 +77,26 @@ public sealed class FlyGame : MonoBehaviour
         }
 
         fly.transform.position = new Vector3(next.x, next.y, 0f);
+        nextPerch = NearbySpot(next);
+        restUntil = Time.time + 0.5f;
+    }
+
+    private static Vector2 NearbySpot(Vector2 here)
+    {
+        Camera view = Camera.main;
+        Vector2 center = view != null ? (Vector2)view.transform.position : Vector2.zero;
+        float tall = view != null ? view.orthographicSize - 0.7f : 4f;
+        float wide = view != null ? view.orthographicSize * view.aspect - 0.7f : 6f;
+
+        for (int tryNumber = 0; tryNumber < 12; tryNumber++)
+        {
+            Vector2 wander = Random.insideUnitCircle.normalized * Random.Range(0.9f, 2.1f);
+            Vector2 spot = here + wander;
+            spot.x = Mathf.Clamp(spot.x, center.x - wide, center.x + wide);
+            spot.y = Mathf.Clamp(spot.y, center.y - tall, center.y + tall);
+            if ((spot - here).sqrMagnitude > 0.36f) return spot;
+        }
+        return here;
     }
 
     private void OnGUI()
