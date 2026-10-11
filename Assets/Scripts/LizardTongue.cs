@@ -23,6 +23,11 @@ public sealed class LizardTongue : MonoBehaviour
     private bool isShooting;
 
     public bool IsOut => isShooting;
+    public float Reach
+    {
+        get => reach;
+        set => reach = Mathf.Max(0.1f, value);
+    }
     public Vector2 StartPoint => tongueCenter.GetPosition(0);
     public Vector2 TipPoint => tongueCenter.GetPosition(1);
 

@@ -1,18 +1,24 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
-// one fly, one score, and plenty of second chances.
+// one fly, a few coins, and a longer tongue to work toward.
 [RequireComponent(typeof(LizardTongue))]
 public sealed class FlyGame : MonoBehaviour
 {
+    private const int MaxTongueLevel = 5;
     private LizardTongue tongue;
     private GameObject fly;
     private Texture2D flyPixels;
     private Sprite flySprite;
     private GUIStyle scoreStyle;
     private int score;
+    private int coins;
+    private int tongueLevel = 1;
+    private bool upgradesOpen;
     private bool caughtThisFlick;
     private Vector2 nextPerch;
     private float restUntil;
+    private int UpgradeCost => tongueLevel + 2;
 
     private void Start()
     {
@@ -30,6 +36,13 @@ public sealed class FlyGame : MonoBehaviour
 
     private void Update()
     {
+        Keyboard keys = Keyboard.current;
+        if (keys != null)
+        {
+            if (keys.eKey.wasPressedThisFrame) upgradesOpen = !upgradesOpen;
+            if (upgradesOpen && keys.digit1Key.wasPressedThisFrame) BuyTongueLength();
+        }
+
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -58,8 +71,18 @@ public sealed class FlyGame : MonoBehaviour
         if ((bugSpot - closest).sqrMagnitude > 0.12f) return;
 
         score++;
+        coins++;
         caughtThisFlick = true;
         MoveFly();
+    }
+
+    private void BuyTongueLength()
+    {
+        if (tongueLevel >= MaxTongueLevel || coins < UpgradeCost) return;
+
+        coins -= UpgradeCost;
+        tongueLevel++;
+        tongue.Reach += 0.5f;
     }
 
     private void MoveFly()
@@ -108,7 +131,14 @@ public sealed class FlyGame : MonoBehaviour
             scoreStyle.fontStyle = FontStyle.Bold;
             scoreStyle.normal.textColor = Color.white;
         }
-        GUI.Label(new Rect(20, 16, 220, 45), $"Flies: {score}", scoreStyle);
+        GUI.Label(new Rect(20, 16, 400, 40), $"Flies: {score}    Coins: {coins}", scoreStyle);
+        GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        if (!upgradesOpen) return;
+
+        string upgrade = tongueLevel >= MaxTongueLevel
+            ? $"Tongue Lv {tongueLevel} (max)"
+            : $"1: Longer tongue - {UpgradeCost} coins (Lv {tongueLevel})";
+        GUI.Label(new Rect(20, 88, 720, 40), upgrade, scoreStyle);
     }
 
     private static Texture2D DrawFly()
