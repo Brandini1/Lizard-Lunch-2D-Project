@@ -1,12 +1,13 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// one fly, a few coins, and a longer tongue to work toward.
+// one fly, a few coins, and some little upgrades to work toward.
 [RequireComponent(typeof(LizardTongue))]
 public sealed class FlyGame : MonoBehaviour
 {
-    private const int MaxTongueLevel = 5;
+    private const int MaxLevel = 5;
     private LizardTongue tongue;
+    private LizardMovement lizard;
     private GameObject fly;
     private Texture2D flyPixels;
     private Sprite flySprite;
@@ -14,15 +15,17 @@ public sealed class FlyGame : MonoBehaviour
     private int score;
     private int coins;
     private int tongueLevel = 1;
+    private int speedLevel = 1;
+    private int cooldownLevel = 1;
     private bool upgradesOpen;
     private bool caughtThisFlick;
     private Vector2 nextPerch;
     private float restUntil;
-    private int UpgradeCost => tongueLevel + 2;
 
     private void Start()
     {
         tongue = GetComponent<LizardTongue>();
+        lizard = GetComponent<LizardMovement>();
         flyPixels = DrawFly();
         flySprite = Sprite.Create(flyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
         fly = new GameObject("Fly");
@@ -40,7 +43,12 @@ public sealed class FlyGame : MonoBehaviour
         if (keys != null)
         {
             if (keys.eKey.wasPressedThisFrame) upgradesOpen = !upgradesOpen;
-            if (upgradesOpen && keys.digit1Key.wasPressedThisFrame) BuyTongueLength();
+            if (upgradesOpen)
+            {
+                if (keys.digit1Key.wasPressedThisFrame) BuyTongueLength();
+                if (keys.digit2Key.wasPressedThisFrame) BuyMovementSpeed();
+                if (keys.digit3Key.wasPressedThisFrame) BuyTongueCooldown();
+            }
         }
 
         if (fly == null || Time.time < restUntil) return;
@@ -78,11 +86,30 @@ public sealed class FlyGame : MonoBehaviour
 
     private void BuyTongueLength()
     {
-        if (tongueLevel >= MaxTongueLevel || coins < UpgradeCost) return;
-
-        coins -= UpgradeCost;
+        if (!SpendOn(tongueLevel)) return;
         tongueLevel++;
         tongue.Reach += 0.5f;
+    }
+
+    private void BuyMovementSpeed()
+    {
+        if (!SpendOn(speedLevel)) return;
+        speedLevel++;
+        lizard.MoveSpeed += 0.5f;
+    }
+
+    private void BuyTongueCooldown()
+    {
+        if (!SpendOn(cooldownLevel)) return;
+        cooldownLevel++;
+        tongue.CooldownSeconds -= 0.04f;
+    }
+
+    private bool SpendOn(int level)
+    {
+        if (level >= MaxLevel || coins < level + 2) return false;
+        coins -= level + 2;
+        return true;
     }
 
     private void MoveFly()
@@ -135,11 +162,13 @@ public sealed class FlyGame : MonoBehaviour
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
         if (!upgradesOpen) return;
 
-        string upgrade = tongueLevel >= MaxTongueLevel
-            ? $"Tongue Lv {tongueLevel} (max)"
-            : $"1: Longer tongue - {UpgradeCost} coins (Lv {tongueLevel})";
-        GUI.Label(new Rect(20, 88, 720, 40), upgrade, scoreStyle);
+        GUI.Label(new Rect(20, 88, 720, 40), UpgradeLine(1, "Longer tongue", tongueLevel), scoreStyle);
+        GUI.Label(new Rect(20, 124, 720, 40), UpgradeLine(2, "Faster feet", speedLevel), scoreStyle);
+        GUI.Label(new Rect(20, 160, 720, 40), UpgradeLine(3, "Shorter cooldown", cooldownLevel), scoreStyle);
     }
+
+    private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
+        ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
 
     private static Texture2D DrawFly()
     {
