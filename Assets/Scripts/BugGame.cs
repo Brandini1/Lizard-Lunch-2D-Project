@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// flies dart around, ants patrol, and both pay for upgrades.
+// flies dart, ants patrol, and beetles scuttle away when you get close.
 [RequireComponent(typeof(LizardTongue))]
 public sealed class BugGame : MonoBehaviour
 {
@@ -17,6 +17,11 @@ public sealed class BugGame : MonoBehaviour
     private Sprite antSprite;
     private float antHeading = 1f;
     private float antRestUntil;
+    private GameObject beetle;
+    private Texture2D beetlePixels;
+    private Sprite beetleSprite;
+    private Vector2 beetleTarget;
+    private float beetleRestUntil;
     private GUIStyle scoreStyle;
     private int score;
     private int coins;
@@ -49,6 +54,16 @@ public sealed class BugGame : MonoBehaviour
         antPicture.sprite = antSprite;
         antPicture.sortingOrder = 2;
         ant.transform.position = new Vector3(-2.8f, 1.8f, 0f);
+
+        beetlePixels = DrawBeetle();
+        beetleSprite = Sprite.Create(beetlePixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+        beetle = new GameObject("Beetle");
+        SpriteRenderer shell = beetle.AddComponent<SpriteRenderer>();
+        shell.sprite = beetleSprite;
+        shell.sortingOrder = 2;
+        beetle.transform.position = new Vector3(2.7f, 1.5f, 0f);
+        beetleTarget = NearbySpot(beetle.transform.position);
+        beetleRestUntil = Time.time + 0.6f;
     }
 
     private void Update()
@@ -66,6 +81,7 @@ public sealed class BugGame : MonoBehaviour
         }
 
         MoveAnt();
+        MoveBeetle();
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -98,6 +114,34 @@ public sealed class BugGame : MonoBehaviour
         ant.transform.position = new Vector3(nextX, here.y, 0f);
     }
 
+    private void MoveBeetle()
+    {
+        if (beetle == null || Time.time < beetleRestUntil) return;
+
+        Vector2 here = beetle.transform.position;
+        Vector2 away = here - (Vector2)transform.position;
+        if (away.sqrMagnitude < 4f && away.sqrMagnitude > 0.01f)
+        {
+            Camera view = Camera.main;
+            Vector2 center = view != null ? (Vector2)view.transform.position : Vector2.zero;
+            float tall = view != null ? view.orthographicSize - 0.7f : 4f;
+            float wide = view != null ? view.orthographicSize * view.aspect - 0.7f : 6f;
+            Vector2 next = here + away.normalized * (1.6f * Time.deltaTime);
+            next.x = Mathf.Clamp(next.x, center.x - wide, center.x + wide);
+            next.y = Mathf.Clamp(next.y, center.y - tall, center.y + tall);
+            beetle.transform.position = new Vector3(next.x, next.y, 0f);
+            return;
+        }
+
+        if ((beetleTarget - here).sqrMagnitude < 0.01f)
+        {
+            beetleTarget = NearbySpot(here);
+            beetleRestUntil = Time.time + Random.Range(0.5f, 1f);
+            return;
+        }
+        beetle.transform.position = Vector2.MoveTowards(here, beetleTarget, 0.65f * Time.deltaTime);
+    }
+
     private void LateUpdate()
     {
         if (!tongue.IsOut) { caughtThisFlick = false; return; }
@@ -109,13 +153,15 @@ public sealed class BugGame : MonoBehaviour
 
         bool caughtFly = TongueTouches(fly, start, span);
         bool caughtAnt = !caughtFly && TongueTouches(ant, start, span);
-        if (!caughtFly && !caughtAnt) return;
+        bool caughtBeetle = !caughtFly && !caughtAnt && TongueTouches(beetle, start, span);
+        if (!caughtFly && !caughtAnt && !caughtBeetle) return;
 
         score++;
-        coins += caughtAnt ? 2 : 1;
+        coins += caughtBeetle ? 3 : caughtAnt ? 2 : 1;
         caughtThisFlick = true;
         if (caughtFly) MoveFly();
-        else RespawnAnt();
+        else if (caughtAnt) RespawnAnt();
+        else RespawnBeetle();
     }
 
     private static bool TongueTouches(GameObject bug, Vector2 start, Vector2 span)
@@ -170,6 +216,14 @@ public sealed class BugGame : MonoBehaviour
         antHeading = Random.value < 0.5f ? -1f : 1f;
         antPicture.flipX = antHeading < 0f;
         antRestUntil = Time.time + 0.5f;
+    }
+
+    private void RespawnBeetle()
+    {
+        Vector2 next = NewBugSpot();
+        beetle.transform.position = new Vector3(next.x, next.y, 0f);
+        beetleTarget = NearbySpot(next);
+        beetleRestUntil = Time.time + 0.7f;
     }
 
     private Vector2 NewBugSpot()
@@ -275,6 +329,33 @@ public sealed class BugGame : MonoBehaviour
         return dots;
     }
 
+    private static Texture2D DrawBeetle()
+    {
+        Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false);
+        dots.filterMode = FilterMode.Point;
+        Color[] colors = new Color[24 * 24];
+        for (int y = 0; y < 24; y++)
+        for (int x = 0; x < 24; x++)
+        {
+            bool legs = NearLine(x, y, 8, 8, 3, 4) || NearLine(x, y, 7, 12, 2, 12)
+                || NearLine(x, y, 8, 16, 3, 20) || NearLine(x, y, 16, 8, 21, 4)
+                || NearLine(x, y, 17, 12, 22, 12) || NearLine(x, y, 16, 16, 21, 20);
+            float shell = Mathf.Pow((x - 12f) / 6f, 2) + Mathf.Pow((y - 10.5f) / 8f, 2);
+            float head = Mathf.Pow((x - 12f) / 3.5f, 2) + Mathf.Pow((y - 18f) / 3f, 2);
+            colors[y * 24 + x] = head < 1f ? new Color(0.10f, 0.20f, 0.23f)
+                : shell < 1f ? new Color(0.10f, 0.50f, 0.53f)
+                : legs ? new Color(0.05f, 0.22f, 0.25f) : Color.clear;
+            if (shell < 1f && x == 12 && y < 17) colors[y * 24 + x] = new Color(0.04f, 0.24f, 0.28f);
+            if ((x == 9 || x == 15) && (y == 8 || y == 12))
+                colors[y * 24 + x] = new Color(0.95f, 0.70f, 0.21f);
+            if ((x == 10 || x == 14) && y == 19)
+                colors[y * 24 + x] = new Color(1f, 0.89f, 0.59f);
+        }
+        dots.SetPixels(colors);
+        dots.Apply();
+        return dots;
+    }
+
     private static bool NearLine(float x, float y, float fromX, float fromY, float toX, float toY)
     {
         Vector2 point = new Vector2(x - fromX, y - fromY);
@@ -291,5 +372,8 @@ public sealed class BugGame : MonoBehaviour
         if (ant != null) Destroy(ant);
         if (antSprite != null) Destroy(antSprite);
         if (antPixels != null) Destroy(antPixels);
+        if (beetle != null) Destroy(beetle);
+        if (beetleSprite != null) Destroy(beetleSprite);
+        if (beetlePixels != null) Destroy(beetlePixels);
     }
 }
