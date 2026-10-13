@@ -41,8 +41,8 @@ public static class SetupLizardLunch
             player.AddComponent<LizardMovement>();
         if (player.GetComponent<LizardTongue>() == null)
             player.AddComponent<LizardTongue>();
-        if (player.GetComponent<FlyGame>() == null)
-            player.AddComponent<FlyGame>();
+        if (player.GetComponent<BugGame>() == null)
+            player.AddComponent<BugGame>();
 
         Camera gameCamera = Camera.main;
         if (gameCamera != null)

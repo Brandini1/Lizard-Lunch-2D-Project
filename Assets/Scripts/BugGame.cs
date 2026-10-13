@@ -1,9 +1,9 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// one fly, a few coins, and some little upgrades to work toward.
+// flies dart around, ants patrol, and both pay for upgrades.
 [RequireComponent(typeof(LizardTongue))]
-public sealed class FlyGame : MonoBehaviour
+public sealed class BugGame : MonoBehaviour
 {
     private const int MaxLevel = 5;
     private LizardTongue tongue;
@@ -11,6 +11,12 @@ public sealed class FlyGame : MonoBehaviour
     private GameObject fly;
     private Texture2D flyPixels;
     private Sprite flySprite;
+    private GameObject ant;
+    private SpriteRenderer antPicture;
+    private Texture2D antPixels;
+    private Sprite antSprite;
+    private float antHeading = 1f;
+    private float antRestUntil;
     private GUIStyle scoreStyle;
     private int score;
     private int coins;
@@ -35,6 +41,14 @@ public sealed class FlyGame : MonoBehaviour
         fly.transform.position = new Vector3(0f, -2.7f, 0f);
         nextPerch = NearbySpot(fly.transform.position);
         restUntil = Time.time + 0.8f;
+
+        antPixels = DrawAnt();
+        antSprite = Sprite.Create(antPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+        ant = new GameObject("Ant");
+        antPicture = ant.AddComponent<SpriteRenderer>();
+        antPicture.sprite = antSprite;
+        antPicture.sortingOrder = 2;
+        ant.transform.position = new Vector3(-2.8f, 1.8f, 0f);
     }
 
     private void Update()
@@ -51,6 +65,7 @@ public sealed class FlyGame : MonoBehaviour
             }
         }
 
+        MoveAnt();
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -64,24 +79,52 @@ public sealed class FlyGame : MonoBehaviour
         fly.transform.position = Vector2.MoveTowards(here, nextPerch, 1.5f * Time.deltaTime);
     }
 
+    private void MoveAnt()
+    {
+        if (ant == null || Time.time < antRestUntil) return;
+
+        Camera view = Camera.main;
+        float centerX = view != null ? view.transform.position.x : 0f;
+        float edge = view != null ? view.orthographicSize * view.aspect - 0.7f : 6f;
+        Vector2 here = ant.transform.position;
+        float nextX = here.x + antHeading * 0.85f * Time.deltaTime;
+        if (nextX < centerX - edge || nextX > centerX + edge)
+        {
+            antHeading *= -1f;
+            antPicture.flipX = antHeading < 0f;
+            antRestUntil = Time.time + 0.35f;
+            return;
+        }
+        ant.transform.position = new Vector3(nextX, here.y, 0f);
+    }
+
     private void LateUpdate()
     {
         if (!tongue.IsOut) { caughtThisFlick = false; return; }
-        if (caughtThisFlick || fly == null) return;
+        if (caughtThisFlick) return;
 
         Vector2 start = tongue.StartPoint;
         Vector2 span = tongue.TipPoint - start;
         if (span.sqrMagnitude < 0.001f) return;
 
-        Vector2 bugSpot = fly.transform.position;
-        float along = Mathf.Clamp01(Vector2.Dot(bugSpot - start, span) / span.sqrMagnitude);
-        Vector2 closest = start + span * along;
-        if ((bugSpot - closest).sqrMagnitude > 0.12f) return;
+        bool caughtFly = TongueTouches(fly, start, span);
+        bool caughtAnt = !caughtFly && TongueTouches(ant, start, span);
+        if (!caughtFly && !caughtAnt) return;
 
         score++;
-        coins++;
+        coins += caughtAnt ? 2 : 1;
         caughtThisFlick = true;
-        MoveFly();
+        if (caughtFly) MoveFly();
+        else RespawnAnt();
+    }
+
+    private static bool TongueTouches(GameObject bug, Vector2 start, Vector2 span)
+    {
+        if (bug == null) return false;
+        Vector2 bugSpot = bug.transform.position;
+        float along = Mathf.Clamp01(Vector2.Dot(bugSpot - start, span) / span.sqrMagnitude);
+        Vector2 closest = start + span * along;
+        return (bugSpot - closest).sqrMagnitude <= 0.12f;
     }
 
     private void BuyTongueLength()
@@ -114,6 +157,23 @@ public sealed class FlyGame : MonoBehaviour
 
     private void MoveFly()
     {
+        Vector2 next = NewBugSpot();
+        fly.transform.position = new Vector3(next.x, next.y, 0f);
+        nextPerch = NearbySpot(next);
+        restUntil = Time.time + 0.5f;
+    }
+
+    private void RespawnAnt()
+    {
+        Vector2 next = NewBugSpot();
+        ant.transform.position = new Vector3(next.x, next.y, 0f);
+        antHeading = Random.value < 0.5f ? -1f : 1f;
+        antPicture.flipX = antHeading < 0f;
+        antRestUntil = Time.time + 0.5f;
+    }
+
+    private Vector2 NewBugSpot()
+    {
         Camera view = Camera.main;
         float tall = view != null ? view.orthographicSize - 0.7f : 4f;
         float wide = view != null ? view.orthographicSize * view.aspect - 0.7f : 6f;
@@ -126,9 +186,7 @@ public sealed class FlyGame : MonoBehaviour
             if (Vector2.Distance(next, transform.position) > 1.5f) break;
         }
 
-        fly.transform.position = new Vector3(next.x, next.y, 0f);
-        nextPerch = NearbySpot(next);
-        restUntil = Time.time + 0.5f;
+        return next;
     }
 
     private static Vector2 NearbySpot(Vector2 here)
@@ -158,7 +216,7 @@ public sealed class FlyGame : MonoBehaviour
             scoreStyle.fontStyle = FontStyle.Bold;
             scoreStyle.normal.textColor = Color.white;
         }
-        GUI.Label(new Rect(20, 16, 400, 40), $"Flies: {score}    Coins: {coins}", scoreStyle);
+        GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
         if (!upgradesOpen) return;
 
@@ -191,10 +249,47 @@ public sealed class FlyGame : MonoBehaviour
         return dots;
     }
 
+    private static Texture2D DrawAnt()
+    {
+        Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false);
+        dots.filterMode = FilterMode.Point;
+        Color[] colors = new Color[24 * 24];
+        for (int y = 0; y < 24; y++)
+        for (int x = 0; x < 24; x++)
+        {
+            bool legs = NearLine(x, y, 8, 10, 4, 4) || NearLine(x, y, 12, 10, 12, 3)
+                || NearLine(x, y, 15, 10, 19, 4) || NearLine(x, y, 8, 14, 4, 20)
+                || NearLine(x, y, 12, 14, 12, 21) || NearLine(x, y, 15, 14, 19, 20);
+            bool feelers = NearLine(x, y, 19, 13, 23, 17) || NearLine(x, y, 19, 11, 23, 7);
+            float back = Mathf.Pow((x - 6.5f) / 4f, 2) + Mathf.Pow((y - 12f) / 3.5f, 2);
+            float middle = Mathf.Pow((x - 12f) / 2.7f, 2) + Mathf.Pow((y - 12f) / 2.7f, 2);
+            float head = Mathf.Pow((x - 17.5f) / 3.5f, 2) + Mathf.Pow((y - 12f) / 3.5f, 2);
+            colors[y * 24 + x] = head < 1f ? new Color(0.43f, 0.19f, 0.10f)
+                : middle < 1f ? new Color(0.34f, 0.14f, 0.09f)
+                : back < 1f ? new Color(0.53f, 0.25f, 0.11f)
+                : legs || feelers ? new Color(0.25f, 0.11f, 0.08f) : Color.clear;
+            if (x == 19 && y == 14) colors[y * 24 + x] = new Color(1f, 0.85f, 0.55f);
+        }
+        dots.SetPixels(colors);
+        dots.Apply();
+        return dots;
+    }
+
+    private static bool NearLine(float x, float y, float fromX, float fromY, float toX, float toY)
+    {
+        Vector2 point = new Vector2(x - fromX, y - fromY);
+        Vector2 line = new Vector2(toX - fromX, toY - fromY);
+        float along = Mathf.Clamp01(Vector2.Dot(point, line) / line.sqrMagnitude);
+        return (point - line * along).sqrMagnitude < 0.9f;
+    }
+
     private void OnDestroy()
     {
         if (fly != null) Destroy(fly);
         if (flySprite != null) Destroy(flySprite);
         if (flyPixels != null) Destroy(flyPixels);
+        if (ant != null) Destroy(ant);
+        if (antSprite != null) Destroy(antSprite);
+        if (antPixels != null) Destroy(antPixels);
     }
 }
