@@ -63,6 +63,13 @@ public sealed class LizardMovement : MonoBehaviour
 
     private void Update()
     {
+        if (Time.timeScale == 0f)
+        {
+            travelInput = Vector2.zero;
+            lizardBody.linearVelocity = Vector2.zero;
+            return;
+        }
+
         Keyboard keys = Keyboard.current;
         if (keys == null)
         {

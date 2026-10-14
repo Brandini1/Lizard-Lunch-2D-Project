@@ -29,6 +29,7 @@ public sealed class BugGame : MonoBehaviour
     private int speedLevel = 1;
     private int cooldownLevel = 1;
     private bool upgradesOpen;
+    private bool paused;
     private bool caughtThisFlick;
     private Vector2 nextPerch;
     private float restUntil;
@@ -69,6 +70,13 @@ public sealed class BugGame : MonoBehaviour
     private void Update()
     {
         Keyboard keys = Keyboard.current;
+        if (keys != null && keys.escapeKey.wasPressedThisFrame)
+        {
+            paused = !paused;
+            Time.timeScale = paused ? 0f : 1f;
+        }
+        if (paused) return;
+
         if (keys != null)
         {
             if (keys.eKey.wasPressedThisFrame) upgradesOpen = !upgradesOpen;
@@ -144,6 +152,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (paused) return;
         if (!tongue.IsOut) { caughtThisFlick = false; return; }
         if (caughtThisFlick) return;
 
@@ -270,6 +279,15 @@ public sealed class BugGame : MonoBehaviour
             scoreStyle.fontStyle = FontStyle.Bold;
             scoreStyle.normal.textColor = Color.white;
         }
+        if (paused)
+        {
+            float middleX = Screen.width * 0.5f;
+            float middleY = Screen.height * 0.5f;
+            GUI.Box(new Rect(middleX - 180, middleY - 75, 360, 150), "");
+            GUI.Label(new Rect(middleX - 80, middleY - 55, 200, 45), "Paused", scoreStyle);
+            GUI.Label(new Rect(middleX - 110, middleY, 250, 45), "Esc: resume", scoreStyle);
+            return;
+        }
         GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
         if (!upgradesOpen) return;
@@ -375,5 +393,11 @@ public sealed class BugGame : MonoBehaviour
         if (beetle != null) Destroy(beetle);
         if (beetleSprite != null) Destroy(beetleSprite);
         if (beetlePixels != null) Destroy(beetlePixels);
+    }
+
+    private void OnDisable()
+    {
+        if (paused) Time.timeScale = 1f;
+        paused = false;
     }
 }
