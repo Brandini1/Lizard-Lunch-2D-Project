@@ -8,6 +8,7 @@ public sealed class BugGame : MonoBehaviour
     private const int MaxLevel = 5;
     private LizardTongue tongue;
     private LizardMovement lizard;
+    private BackyardMap backyard;
     private GameObject fly;
     private Texture2D flyPixels;
     private Sprite flySprite;
@@ -38,6 +39,7 @@ public sealed class BugGame : MonoBehaviour
     {
         tongue = GetComponent<LizardTongue>();
         lizard = GetComponent<LizardMovement>();
+        backyard = GetComponent<BackyardMap>() ?? gameObject.AddComponent<BackyardMap>();
         flyPixels = DrawFly();
         flySprite = Sprite.Create(flyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
         fly = new GameObject("Fly");
@@ -112,7 +114,8 @@ public sealed class BugGame : MonoBehaviour
         float edge = view != null ? view.orthographicSize * view.aspect - 0.7f : 6f;
         Vector2 here = ant.transform.position;
         float nextX = here.x + antHeading * 0.85f * Time.deltaTime;
-        if (nextX < centerX - edge || nextX > centerX + edge)
+        if (nextX < centerX - edge || nextX > centerX + edge ||
+            backyard.IsBlocked(new Vector2(nextX, here.y), 0.25f))
         {
             antHeading *= -1f;
             antPicture.flipX = antHeading < 0f;
@@ -137,6 +140,12 @@ public sealed class BugGame : MonoBehaviour
             Vector2 next = here + away.normalized * (1.6f * Time.deltaTime);
             next.x = Mathf.Clamp(next.x, center.x - wide, center.x + wide);
             next.y = Mathf.Clamp(next.y, center.y - tall, center.y + tall);
+            if (backyard.IsBlocked(next, 0.25f))
+            {
+                Vector2 side = new Vector2(-away.y, away.x).normalized;
+                next = here + side * (1.6f * Time.deltaTime);
+                if (backyard.IsBlocked(next, 0.25f)) return;
+            }
             beetle.transform.position = new Vector3(next.x, next.y, 0f);
             return;
         }
@@ -147,7 +156,14 @@ public sealed class BugGame : MonoBehaviour
             beetleRestUntil = Time.time + Random.Range(0.5f, 1f);
             return;
         }
-        beetle.transform.position = Vector2.MoveTowards(here, beetleTarget, 0.65f * Time.deltaTime);
+        Vector2 step = Vector2.MoveTowards(here, beetleTarget, 0.65f * Time.deltaTime);
+        if (backyard.IsBlocked(step, 0.25f))
+        {
+            beetleTarget = NearbySpot(here);
+            beetleRestUntil = Time.time + 0.3f;
+            return;
+        }
+        beetle.transform.position = step;
     }
 
     private void LateUpdate()
@@ -246,13 +262,14 @@ public sealed class BugGame : MonoBehaviour
         for (int tryNumber = 0; tryNumber < 20; tryNumber++)
         {
             next = center + new Vector2(Random.Range(-wide, wide), Random.Range(-tall, tall));
-            if (Vector2.Distance(next, transform.position) > 1.5f) break;
+            if (Vector2.Distance(next, transform.position) > 1.5f &&
+                !backyard.IsBlocked(next, 0.35f)) break;
         }
 
         return next;
     }
 
-    private static Vector2 NearbySpot(Vector2 here)
+    private Vector2 NearbySpot(Vector2 here)
     {
         Camera view = Camera.main;
         Vector2 center = view != null ? (Vector2)view.transform.position : Vector2.zero;
@@ -265,7 +282,8 @@ public sealed class BugGame : MonoBehaviour
             Vector2 spot = here + wander;
             spot.x = Mathf.Clamp(spot.x, center.x - wide, center.x + wide);
             spot.y = Mathf.Clamp(spot.y, center.y - tall, center.y + tall);
-            if ((spot - here).sqrMagnitude > 0.36f) return spot;
+            if ((spot - here).sqrMagnitude > 0.36f && !backyard.IsBlocked(spot, 0.35f))
+                return spot;
         }
         return here;
     }

@@ -14,6 +14,7 @@ public sealed class LizardTongue : MonoBehaviour
     [SerializeField, Min(0f)] private float mouthOffset = 0.8f;
 
     private LizardMovement lizardMovement;
+    private BackyardMap backyard;
     private LineRenderer tongueEdge;
     private LineRenderer tongueCenter;
     private Material tongueMaterial;
@@ -70,7 +71,9 @@ public sealed class LizardTongue : MonoBehaviour
                       : 1f - (shotTime - retractStarts) / retractSeconds;
 
         Vector2 start = (Vector2)transform.position + shotDirection * mouthOffset;
-        Vector2 end = start + shotDirection * (reach * Mathf.Clamp01(stretch));
+        if (backyard == null) backyard = GetComponent<BackyardMap>();
+        float clearReach = backyard != null ? backyard.ClearTongueDistance(start, shotDirection, reach) : reach;
+        Vector2 end = start + shotDirection * Mathf.Min(reach * Mathf.Clamp01(stretch), clearReach);
         tongueEdge.SetPosition(0, start);
         tongueEdge.SetPosition(1, end);
         tongueCenter.SetPosition(0, start);
