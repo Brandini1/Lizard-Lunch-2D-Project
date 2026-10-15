@@ -39,6 +39,7 @@ public sealed class BugGame : MonoBehaviour
     {
         tongue = GetComponent<LizardTongue>();
         lizard = GetComponent<LizardMovement>();
+        LoadProgress();
         backyard = GetComponent<BackyardMap>() ?? gameObject.AddComponent<BackyardMap>();
         flyPixels = DrawFly();
         flySprite = Sprite.Create(flyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
@@ -183,6 +184,7 @@ public sealed class BugGame : MonoBehaviour
 
         score++;
         coins += caughtBeetle ? 3 : caughtAnt ? 2 : 1;
+        SaveProgress();
         caughtThisFlick = true;
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
@@ -203,6 +205,7 @@ public sealed class BugGame : MonoBehaviour
         if (!SpendOn(tongueLevel)) return;
         tongueLevel++;
         tongue.Reach += 0.5f;
+        SaveProgress();
     }
 
     private void BuyMovementSpeed()
@@ -210,6 +213,7 @@ public sealed class BugGame : MonoBehaviour
         if (!SpendOn(speedLevel)) return;
         speedLevel++;
         lizard.MoveSpeed += 0.5f;
+        SaveProgress();
     }
 
     private void BuyTongueCooldown()
@@ -217,6 +221,7 @@ public sealed class BugGame : MonoBehaviour
         if (!SpendOn(cooldownLevel)) return;
         cooldownLevel++;
         tongue.CooldownSeconds -= 0.04f;
+        SaveProgress();
     }
 
     private bool SpendOn(int level)
@@ -224,6 +229,29 @@ public sealed class BugGame : MonoBehaviour
         if (level >= MaxLevel || coins < level + 2) return false;
         coins -= level + 2;
         return true;
+    }
+
+    private void LoadProgress()
+    {
+        score = Mathf.Max(0, PlayerPrefs.GetInt("LizardLunch.BugsCaught"));
+        coins = Mathf.Max(0, PlayerPrefs.GetInt("LizardLunch.Coins"));
+        tongueLevel = Mathf.Clamp(PlayerPrefs.GetInt("LizardLunch.TongueLevel", 1), 1, MaxLevel);
+        speedLevel = Mathf.Clamp(PlayerPrefs.GetInt("LizardLunch.SpeedLevel", 1), 1, MaxLevel);
+        cooldownLevel = Mathf.Clamp(PlayerPrefs.GetInt("LizardLunch.CooldownLevel", 1), 1, MaxLevel);
+
+        tongue.Reach += (tongueLevel - 1) * 0.5f;
+        lizard.MoveSpeed += (speedLevel - 1) * 0.5f;
+        tongue.CooldownSeconds -= (cooldownLevel - 1) * 0.04f;
+    }
+
+    private void SaveProgress()
+    {
+        PlayerPrefs.SetInt("LizardLunch.BugsCaught", score);
+        PlayerPrefs.SetInt("LizardLunch.Coins", coins);
+        PlayerPrefs.SetInt("LizardLunch.TongueLevel", tongueLevel);
+        PlayerPrefs.SetInt("LizardLunch.SpeedLevel", speedLevel);
+        PlayerPrefs.SetInt("LizardLunch.CooldownLevel", cooldownLevel);
+        PlayerPrefs.Save();
     }
 
     private void MoveFly()
