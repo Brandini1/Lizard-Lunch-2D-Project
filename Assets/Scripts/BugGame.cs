@@ -24,12 +24,15 @@ public sealed class BugGame : MonoBehaviour
     private Vector2 beetleTarget;
     private float beetleRestUntil;
     private GUIStyle scoreStyle;
+    private GUIStyle titleStyle;
+    private GUIStyle playStyle;
     private int score;
     private int coins;
     private int tongueLevel = 1;
     private int speedLevel = 1;
     private int cooldownLevel = 1;
     private bool upgradesOpen;
+    private bool titleOpen = true;
     private bool paused;
     private bool caughtThisFlick;
     private Vector2 nextPerch;
@@ -37,6 +40,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void Start()
     {
+        Time.timeScale = 0f;
         tongue = GetComponent<LizardTongue>();
         lizard = GetComponent<LizardMovement>();
         LoadProgress();
@@ -73,6 +77,12 @@ public sealed class BugGame : MonoBehaviour
     private void Update()
     {
         Keyboard keys = Keyboard.current;
+        if (titleOpen)
+        {
+            if (keys != null && (keys.enterKey.wasPressedThisFrame || keys.spaceKey.wasPressedThisFrame))
+                StartGame();
+            return;
+        }
         if (keys != null && keys.escapeKey.wasPressedThisFrame)
         {
             paused = !paused;
@@ -324,6 +334,20 @@ public sealed class BugGame : MonoBehaviour
             scoreStyle.fontSize = 28;
             scoreStyle.fontStyle = FontStyle.Bold;
             scoreStyle.normal.textColor = Color.white;
+            titleStyle = new GUIStyle(scoreStyle) { fontSize = 38, alignment = TextAnchor.MiddleCenter };
+            playStyle = new GUIStyle(GUI.skin.button) { fontSize = 22 };
+        }
+        if (titleOpen)
+        {
+            float x = Screen.width * 0.5f - 210f;
+            float y = Screen.height * 0.5f - 140f;
+            GUI.Box(new Rect(x, y, 420, 280), "");
+            GUI.Label(new Rect(x + 20, y + 18, 380, 55), "Lizard Lunch", titleStyle);
+            GUI.Label(new Rect(x + 82, y + 82, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
+            GUI.Label(new Rect(x + 82, y + 111, 300, 25), "Move: WASD / arrows    Tongue: click");
+            GUI.Label(new Rect(x + 82, y + 140, 300, 25), "E: upgrades    Esc: pause");
+            if (GUI.Button(new Rect(x + 115, y + 190, 190, 52), "Play", playStyle)) StartGame();
+            return;
         }
         if (paused)
         {
@@ -345,6 +369,12 @@ public sealed class BugGame : MonoBehaviour
 
     private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
         ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
+
+    private void StartGame()
+    {
+        titleOpen = false;
+        Time.timeScale = 1f;
+    }
 
     private static Texture2D DrawFly()
     {
@@ -443,7 +473,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void OnDisable()
     {
-        if (paused) Time.timeScale = 1f;
+        if (paused || titleOpen) Time.timeScale = 1f;
         paused = false;
     }
 }
