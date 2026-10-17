@@ -7,6 +7,11 @@ public sealed class BugGame : MonoBehaviour
 {
     private const int MaxLevel = 5;
     private const int FlowerPatchUnlock = 15;
+    private static readonly Vector2[] FlowerSpots =
+    {
+        new Vector2(-0.27f, 0.40f), new Vector2(0.25f, 0.24f),
+        new Vector2(-0.18f, -0.55f), new Vector2(0.42f, -0.62f)
+    };
     private LizardTongue tongue;
     private LizardMovement lizard;
     private BackyardMap backyard;
@@ -24,6 +29,11 @@ public sealed class BugGame : MonoBehaviour
     private Sprite beetleSprite;
     private Vector2 beetleTarget;
     private float beetleRestUntil;
+    private GameObject butterfly;
+    private Texture2D butterflyPixels;
+    private Sprite butterflySprite;
+    private Vector2 butterflyTarget;
+    private float butterflyRestUntil;
     private GUIStyle scoreStyle;
     private GUIStyle titleStyle;
     private GUIStyle playStyle;
@@ -104,6 +114,7 @@ public sealed class BugGame : MonoBehaviour
 
         MoveAnt();
         MoveBeetle();
+        MoveButterfly();
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -178,9 +189,27 @@ public sealed class BugGame : MonoBehaviour
         beetle.transform.position = step;
     }
 
+    private void MoveButterfly()
+    {
+        if (butterfly == null || !butterfly.activeSelf) return;
+        Vector2 here = butterfly.transform.position;
+        float flap = Mathf.Abs(Mathf.Sin(Time.time * 12f));
+        butterfly.transform.localScale = new Vector3(0.65f + flap * 0.35f, 1f, 1f);
+        if (Time.time < butterflyRestUntil) return;
+        if ((butterflyTarget - here).sqrMagnitude < 0.05f)
+        {
+            butterflyTarget = FlowerSpot(here);
+            butterflyRestUntil = Time.time + Random.Range(0.35f, 0.8f);
+            return;
+        }
+        Vector2 next = Vector2.MoveTowards(here, butterflyTarget, 1.1f * Time.deltaTime);
+        if (backyard.IsBlocked(next, 0.22f)) butterflyTarget = FlowerSpot(here);
+        else butterfly.transform.position = next;
+    }
+
     private void LateUpdate()
     {
-        if (paused) return;
+        if (paused || titleOpen) return;
         if (!tongue.IsOut) { caughtThisFlick = false; return; }
         if (caughtThisFlick) return;
 
@@ -191,20 +220,22 @@ public sealed class BugGame : MonoBehaviour
         bool caughtFly = TongueTouches(fly, start, span);
         bool caughtAnt = !caughtFly && TongueTouches(ant, start, span);
         bool caughtBeetle = !caughtFly && !caughtAnt && TongueTouches(beetle, start, span);
-        if (!caughtFly && !caughtAnt && !caughtBeetle) return;
+        bool caughtButterfly = !caughtFly && !caughtAnt && !caughtBeetle && TongueTouches(butterfly, start, span);
+        if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly) return;
 
         score++;
-        coins += caughtBeetle ? 3 : caughtAnt ? 2 : 1;
+        coins += caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1;
         SaveProgress();
         caughtThisFlick = true;
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
-        else RespawnBeetle();
+        else if (caughtBeetle) RespawnBeetle();
+        else RespawnButterfly();
     }
 
     private static bool TongueTouches(GameObject bug, Vector2 start, Vector2 span)
     {
-        if (bug == null) return false;
+        if (bug == null || !bug.activeInHierarchy) return false;
         Vector2 bugSpot = bug.transform.position;
         float along = Mathf.Clamp01(Vector2.Dot(bugSpot - start, span) / span.sqrMagnitude);
         Vector2 closest = start + span * along;
@@ -290,6 +321,30 @@ public sealed class BugGame : MonoBehaviour
         beetleRestUntil = Time.time + 0.7f;
     }
 
+    private void RespawnButterfly()
+    {
+        Vector2 next = FlowerSpot(transform.position);
+        butterfly.transform.position = next;
+        butterflyTarget = FlowerSpot(next);
+        butterflyRestUntil = Time.time + 0.4f;
+    }
+
+    private Vector2 FlowerSpot(Vector2 awayFrom)
+    {
+        Camera view = Camera.main;
+        Vector2 center = view != null ? (Vector2)view.transform.position : Vector2.zero;
+        float tall = view != null ? view.orthographicSize : 5f;
+        float wide = view != null ? tall * view.aspect : 8f;
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            Vector2 flower = FlowerSpots[Random.Range(0, FlowerSpots.Length)];
+            Vector2 spot = center + new Vector2(flower.x * wide, flower.y * tall);
+            if ((spot - awayFrom).sqrMagnitude > 1f && !backyard.IsBlocked(spot, 0.25f))
+                return spot;
+        }
+        return NewBugSpot();
+    }
+
     private Vector2 NewBugSpot()
     {
         Camera view = Camera.main;
@@ -351,8 +406,10 @@ public sealed class BugGame : MonoBehaviour
             GUI.enabled = score >= FlowerPatchUnlock;
             if (GUI.Button(new Rect(x + 50, y + 239, 320, 48), "Play Flower Patch", playStyle)) StartGame(true);
             GUI.enabled = true;
-            if (score < FlowerPatchUnlock)
-                GUI.Label(new Rect(x + 112, y + 294, 270, 25), $"Unlock at {FlowerPatchUnlock} bugs ({score}/{FlowerPatchUnlock})");
+            string flowerHint = score < FlowerPatchUnlock
+                ? $"Unlock at {FlowerPatchUnlock} bugs ({score}/{FlowerPatchUnlock})"
+                : "Butterflies are worth 4 coins";
+            GUI.Label(new Rect(x + 112, y + 294, 280, 25), flowerHint);
             return;
         }
         if (paused)
@@ -393,6 +450,20 @@ public sealed class BugGame : MonoBehaviour
             MoveFly();
             RespawnAnt();
             RespawnBeetle();
+        }
+        if (useFlowers && butterfly == null)
+        {
+            butterflyPixels = DrawButterfly();
+            butterflySprite = Sprite.Create(butterflyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+            butterfly = new GameObject("Butterfly");
+            SpriteRenderer wings = butterfly.AddComponent<SpriteRenderer>();
+            wings.sprite = butterflySprite;
+            wings.sortingOrder = 2;
+        }
+        if (butterfly != null)
+        {
+            butterfly.SetActive(useFlowers);
+            if (useFlowers) RespawnButterfly();
         }
         titleOpen = false;
         Time.timeScale = 1f;
@@ -472,6 +543,29 @@ public sealed class BugGame : MonoBehaviour
         return dots;
     }
 
+    private static Texture2D DrawButterfly()
+    {
+        Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false);
+        dots.filterMode = FilterMode.Point;
+        Color[] colors = new Color[24 * 24];
+        for (int y = 0; y < 24; y++)
+        for (int x = 0; x < 24; x++)
+        {
+            float wingX = Mathf.Abs(x - 11.5f);
+            float topWing = Mathf.Pow((wingX - 5f) / 5f, 2) + Mathf.Pow((y - 15f) / 5f, 2);
+            float lowWing = Mathf.Pow((wingX - 5f) / 4f, 2) + Mathf.Pow((y - 8f) / 4f, 2);
+            bool body = x >= 11 && x <= 12 && y >= 5 && y <= 19;
+            colors[y * 24 + x] = body ? new Color(0.25f, 0.13f, 0.24f)
+                : topWing < 1f || lowWing < 1f ? new Color(0.85f, 0.42f, 0.78f)
+                : Color.clear;
+            if ((topWing < 0.12f || lowWing < 0.15f) && !body)
+                colors[y * 24 + x] = new Color(1f, 0.86f, 0.35f);
+        }
+        dots.SetPixels(colors);
+        dots.Apply();
+        return dots;
+    }
+
     private static bool NearLine(float x, float y, float fromX, float fromY, float toX, float toY)
     {
         Vector2 point = new Vector2(x - fromX, y - fromY);
@@ -491,6 +585,9 @@ public sealed class BugGame : MonoBehaviour
         if (beetle != null) Destroy(beetle);
         if (beetleSprite != null) Destroy(beetleSprite);
         if (beetlePixels != null) Destroy(beetlePixels);
+        if (butterfly != null) Destroy(butterfly);
+        if (butterflySprite != null) Destroy(butterflySprite);
+        if (butterflyPixels != null) Destroy(butterflyPixels);
     }
 
     private void OnDisable()
