@@ -6,6 +6,7 @@ using UnityEngine.InputSystem;
 public sealed class BugGame : MonoBehaviour
 {
     private const int MaxLevel = 5;
+    private const int FlowerPatchUnlock = 15;
     private LizardTongue tongue;
     private LizardMovement lizard;
     private BackyardMap backyard;
@@ -80,7 +81,7 @@ public sealed class BugGame : MonoBehaviour
         if (titleOpen)
         {
             if (keys != null && (keys.enterKey.wasPressedThisFrame || keys.spaceKey.wasPressedThisFrame))
-                StartGame();
+                StartGame(false);
             return;
         }
         if (keys != null && keys.escapeKey.wasPressedThisFrame)
@@ -340,22 +341,33 @@ public sealed class BugGame : MonoBehaviour
         if (titleOpen)
         {
             float x = Screen.width * 0.5f - 210f;
-            float y = Screen.height * 0.5f - 140f;
-            GUI.Box(new Rect(x, y, 420, 280), "");
+            float y = Screen.height * 0.5f - 170f;
+            GUI.Box(new Rect(x, y, 420, 340), "");
             GUI.Label(new Rect(x + 20, y + 18, 380, 55), "Lizard Lunch", titleStyle);
-            GUI.Label(new Rect(x + 82, y + 82, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
-            GUI.Label(new Rect(x + 82, y + 111, 300, 25), "Move: WASD / arrows    Tongue: click");
-            GUI.Label(new Rect(x + 82, y + 140, 300, 25), "E: upgrades    Esc: pause");
-            if (GUI.Button(new Rect(x + 115, y + 190, 190, 52), "Play", playStyle)) StartGame();
+            GUI.Label(new Rect(x + 82, y + 76, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
+            GUI.Label(new Rect(x + 82, y + 105, 300, 25), "Move: WASD / arrows    Tongue: click");
+            GUI.Label(new Rect(x + 82, y + 134, 300, 25), "E: upgrades    Esc: pause");
+            if (GUI.Button(new Rect(x + 50, y + 181, 320, 48), "Play Backyard", playStyle)) StartGame(false);
+            GUI.enabled = score >= FlowerPatchUnlock;
+            if (GUI.Button(new Rect(x + 50, y + 239, 320, 48), "Play Flower Patch", playStyle)) StartGame(true);
+            GUI.enabled = true;
+            if (score < FlowerPatchUnlock)
+                GUI.Label(new Rect(x + 112, y + 294, 270, 25), $"Unlock at {FlowerPatchUnlock} bugs ({score}/{FlowerPatchUnlock})");
             return;
         }
         if (paused)
         {
             float middleX = Screen.width * 0.5f;
             float middleY = Screen.height * 0.5f;
-            GUI.Box(new Rect(middleX - 180, middleY - 75, 360, 150), "");
-            GUI.Label(new Rect(middleX - 80, middleY - 55, 200, 45), "Paused", scoreStyle);
-            GUI.Label(new Rect(middleX - 110, middleY, 250, 45), "Esc: resume", scoreStyle);
+            GUI.Box(new Rect(middleX - 180, middleY - 105, 360, 210), "");
+            GUI.Label(new Rect(middleX - 80, middleY - 85, 200, 45), "Paused", scoreStyle);
+            GUI.Label(new Rect(middleX - 110, middleY - 30, 250, 45), "Esc: resume", scoreStyle);
+            if (GUI.Button(new Rect(middleX - 120, middleY + 32, 240, 48), "Main menu", playStyle))
+            {
+                paused = false;
+                titleOpen = true;
+                upgradesOpen = false;
+            }
             return;
         }
         GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
@@ -370,8 +382,18 @@ public sealed class BugGame : MonoBehaviour
     private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
         ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
 
-    private void StartGame()
+    private void StartGame(bool useFlowers)
     {
+        if (backyard.SetArea(useFlowers))
+        {
+            Camera view = Camera.main;
+            Rigidbody2D body = GetComponent<Rigidbody2D>();
+            body.position = view != null ? (Vector2)view.transform.position : Vector2.zero;
+            body.linearVelocity = Vector2.zero;
+            MoveFly();
+            RespawnAnt();
+            RespawnBeetle();
+        }
         titleOpen = false;
         Time.timeScale = 1f;
     }
