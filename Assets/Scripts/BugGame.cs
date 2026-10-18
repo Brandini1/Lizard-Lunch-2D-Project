@@ -34,6 +34,10 @@ public sealed class BugGame : MonoBehaviour
     private Sprite butterflySprite;
     private Vector2 butterflyTarget;
     private float butterflyRestUntil;
+    private AudioSource sounds;
+    private AudioClip flickSound;
+    private AudioClip catchSound;
+    private AudioClip upgradeSound;
     private GUIStyle scoreStyle;
     private GUIStyle titleStyle;
     private GUIStyle playStyle;
@@ -46,6 +50,7 @@ public sealed class BugGame : MonoBehaviour
     private bool titleOpen = true;
     private bool paused;
     private bool caughtThisFlick;
+    private bool heardThisFlick;
     private Vector2 nextPerch;
     private float restUntil;
 
@@ -55,6 +60,12 @@ public sealed class BugGame : MonoBehaviour
         tongue = GetComponent<LizardTongue>();
         lizard = GetComponent<LizardMovement>();
         LoadProgress();
+        sounds = gameObject.AddComponent<AudioSource>();
+        sounds.playOnAwake = false;
+        sounds.spatialBlend = 0f;
+        flickSound = MakeSound("Tongue flick", 0.10f, 700f, 280f);
+        catchSound = MakeSound("Bug caught", 0.18f, 420f, 820f);
+        upgradeSound = MakeSound("Upgrade bought", 0.24f, 520f, 1040f);
         backyard = GetComponent<BackyardMap>() ?? gameObject.AddComponent<BackyardMap>();
         flyPixels = DrawFly();
         flySprite = Sprite.Create(flyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
@@ -210,7 +221,17 @@ public sealed class BugGame : MonoBehaviour
     private void LateUpdate()
     {
         if (paused || titleOpen) return;
-        if (!tongue.IsOut) { caughtThisFlick = false; return; }
+        if (!tongue.IsOut)
+        {
+            caughtThisFlick = false;
+            heardThisFlick = false;
+            return;
+        }
+        if (!heardThisFlick)
+        {
+            sounds.PlayOneShot(flickSound);
+            heardThisFlick = true;
+        }
         if (caughtThisFlick) return;
 
         Vector2 start = tongue.StartPoint;
@@ -226,6 +247,7 @@ public sealed class BugGame : MonoBehaviour
         score++;
         coins += caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1;
         SaveProgress();
+        sounds.PlayOneShot(catchSound);
         caughtThisFlick = true;
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
@@ -270,6 +292,7 @@ public sealed class BugGame : MonoBehaviour
     {
         if (level >= MaxLevel || coins < level + 2) return false;
         coins -= level + 2;
+        sounds.PlayOneShot(upgradeSound);
         return true;
     }
 
@@ -469,6 +492,24 @@ public sealed class BugGame : MonoBehaviour
         Time.timeScale = 1f;
     }
 
+    private static AudioClip MakeSound(string name, float seconds, float firstNote, float lastNote)
+    {
+        const int sampleRate = 22050;
+        int count = Mathf.RoundToInt(seconds * sampleRate);
+        float[] notes = new float[count];
+        float wave = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float part = i / (float)count;
+            wave += 2f * Mathf.PI * Mathf.Lerp(firstNote, lastNote, part) / sampleRate;
+            float fade = Mathf.Min(1f, part * 20f) * (1f - part);
+            notes[i] = Mathf.Sin(wave) * fade * 0.25f;
+        }
+        AudioClip clip = AudioClip.Create(name, count, 1, sampleRate, false);
+        clip.SetData(notes, 0);
+        return clip;
+    }
+
     private static Texture2D DrawFly()
     {
         Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false);
@@ -588,6 +629,9 @@ public sealed class BugGame : MonoBehaviour
         if (butterfly != null) Destroy(butterfly);
         if (butterflySprite != null) Destroy(butterflySprite);
         if (butterflyPixels != null) Destroy(butterflyPixels);
+        if (flickSound != null) Destroy(flickSound);
+        if (catchSound != null) Destroy(catchSound);
+        if (upgradeSound != null) Destroy(upgradeSound);
     }
 
     private void OnDisable()
