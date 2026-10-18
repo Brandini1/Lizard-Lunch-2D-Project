@@ -41,6 +41,7 @@ public sealed class BugGame : MonoBehaviour
     private GUIStyle scoreStyle;
     private GUIStyle titleStyle;
     private GUIStyle playStyle;
+    private GUIStyle rewardStyle;
     private int score;
     private int coins;
     private int tongueLevel = 1;
@@ -53,6 +54,9 @@ public sealed class BugGame : MonoBehaviour
     private bool heardThisFlick;
     private Vector2 nextPerch;
     private float restUntil;
+    private Vector2 rewardSpot;
+    private int rewardAmount;
+    private float rewardStarted;
 
     private void Start()
     {
@@ -244,8 +248,12 @@ public sealed class BugGame : MonoBehaviour
         bool caughtButterfly = !caughtFly && !caughtAnt && !caughtBeetle && TongueTouches(butterfly, start, span);
         if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly) return;
 
+        GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : butterfly;
+        rewardSpot = caught.transform.position;
+        rewardAmount = caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1;
+        rewardStarted = Time.time;
         score++;
-        coins += caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1;
+        coins += rewardAmount;
         SaveProgress();
         sounds.PlayOneShot(catchSound);
         caughtThisFlick = true;
@@ -415,6 +423,8 @@ public sealed class BugGame : MonoBehaviour
             scoreStyle.normal.textColor = Color.white;
             titleStyle = new GUIStyle(scoreStyle) { fontSize = 38, alignment = TextAnchor.MiddleCenter };
             playStyle = new GUIStyle(GUI.skin.button) { fontSize = 22 };
+            rewardStyle = new GUIStyle(scoreStyle) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
         }
         if (titleOpen)
         {
@@ -452,6 +462,20 @@ public sealed class BugGame : MonoBehaviour
         }
         GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        if (rewardAmount > 0 && Time.time - rewardStarted < 0.9f)
+        {
+            Camera view = Camera.main;
+            if (view != null)
+            {
+                Vector3 screen = view.WorldToScreenPoint(rewardSpot);
+                float fade = 1f - (Time.time - rewardStarted) / 0.9f;
+                Color oldColor = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, fade);
+                GUI.Label(new Rect(screen.x - 65f, Screen.height - screen.y - 40f * (1f - fade), 130f, 35f),
+                    $"+{rewardAmount} coins", rewardStyle);
+                GUI.color = oldColor;
+            }
+        }
         if (!upgradesOpen) return;
 
         GUI.Label(new Rect(20, 88, 720, 40), UpgradeLine(1, "Longer tongue", tongueLevel), scoreStyle);
@@ -464,6 +488,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void StartGame(bool useFlowers)
     {
+        rewardAmount = 0;
         if (backyard.SetArea(useFlowers))
         {
             Camera view = Camera.main;
