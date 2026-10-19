@@ -7,6 +7,7 @@ public sealed class BugGame : MonoBehaviour
 {
     private const int MaxLevel = 5;
     private const int FlowerPatchUnlock = 15;
+    private const float ComboSeconds = 4f;
     private static readonly Vector2[] FlowerSpots =
     {
         new Vector2(-0.27f, 0.40f), new Vector2(0.25f, 0.24f),
@@ -57,6 +58,8 @@ public sealed class BugGame : MonoBehaviour
     private Vector2 rewardSpot;
     private int rewardAmount;
     private float rewardStarted;
+    private int combo;
+    private float lastCatchTime = float.NegativeInfinity;
 
     private void Start()
     {
@@ -250,7 +253,10 @@ public sealed class BugGame : MonoBehaviour
 
         GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : butterfly;
         rewardSpot = caught.transform.position;
-        rewardAmount = caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1;
+        combo = Time.time - lastCatchTime <= ComboSeconds ? combo + 1 : 1;
+        lastCatchTime = Time.time;
+        rewardAmount = (caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1)
+            + (combo >= 3 ? 1 : 0);
         rewardStarted = Time.time;
         score++;
         coins += rewardAmount;
@@ -462,6 +468,13 @@ public sealed class BugGame : MonoBehaviour
         }
         GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        float comboLeft = ComboSeconds - (Time.time - lastCatchTime);
+        if (combo >= 2 && comboLeft > 0f)
+        {
+            string bonus = combo >= 3 ? "  +1 coin per catch" : "";
+            GUI.Label(new Rect(20, upgradesOpen ? 196 : 88, 540, 40),
+                $"Combo x{combo}  {comboLeft:0.0}s{bonus}", scoreStyle);
+        }
         if (rewardAmount > 0 && Time.time - rewardStarted < 0.9f)
         {
             Camera view = Camera.main;
@@ -489,6 +502,8 @@ public sealed class BugGame : MonoBehaviour
     private void StartGame(bool useFlowers)
     {
         rewardAmount = 0;
+        combo = 0;
+        lastCatchTime = float.NegativeInfinity;
         if (backyard.SetArea(useFlowers))
         {
             Camera view = Camera.main;
