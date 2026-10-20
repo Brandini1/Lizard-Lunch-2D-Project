@@ -60,6 +60,9 @@ public sealed class BugGame : MonoBehaviour
     private float rewardStarted;
     private int combo;
     private float lastCatchTime = float.NegativeInfinity;
+    private float celebrationUntil;
+
+    private bool AllUpgradesMaxed => tongueLevel == MaxLevel && speedLevel == MaxLevel && cooldownLevel == MaxLevel;
 
     private void Start()
     {
@@ -284,6 +287,7 @@ public sealed class BugGame : MonoBehaviour
         tongueLevel++;
         tongue.Reach += 0.5f;
         SaveProgress();
+        CelebrateMaxed();
     }
 
     private void BuyMovementSpeed()
@@ -292,6 +296,7 @@ public sealed class BugGame : MonoBehaviour
         speedLevel++;
         lizard.MoveSpeed += 0.5f;
         SaveProgress();
+        CelebrateMaxed();
     }
 
     private void BuyTongueCooldown()
@@ -300,6 +305,12 @@ public sealed class BugGame : MonoBehaviour
         cooldownLevel++;
         tongue.CooldownSeconds -= 0.04f;
         SaveProgress();
+        CelebrateMaxed();
+    }
+
+    private void CelebrateMaxed()
+    {
+        if (AllUpgradesMaxed) celebrationUntil = Time.time + 4f;
     }
 
     private bool SpendOn(int level)
@@ -448,7 +459,9 @@ public sealed class BugGame : MonoBehaviour
             string flowerHint = score < FlowerPatchUnlock
                 ? $"Unlock at {FlowerPatchUnlock} bugs ({score}/{FlowerPatchUnlock})"
                 : "Butterflies are worth 4 coins";
-            GUI.Label(new Rect(x + 112, y + 294, 280, 25), flowerHint);
+            if (AllUpgradesMaxed) flowerHint = "All upgrades maxed!";
+            GUI.Label(new Rect(x + 80, y + 294, 300, 32), flowerHint,
+                AllUpgradesMaxed ? rewardStyle : GUI.skin.label);
             return;
         }
         if (paused)
@@ -488,6 +501,14 @@ public sealed class BugGame : MonoBehaviour
                     $"+{rewardAmount} coins", rewardStyle);
                 GUI.color = oldColor;
             }
+        }
+        if (Time.time < celebrationUntil)
+        {
+            float x = Screen.width * 0.5f - 220f;
+            float y = Screen.height - 145f;
+            GUI.Box(new Rect(x, y, 440, 110), "");
+            GUI.Label(new Rect(x + 10, y + 12, 420, 45), "Master Lizard!", titleStyle);
+            GUI.Label(new Rect(x + 10, y + 58, 420, 35), "All upgrades maxed. Keep catching bugs!", rewardStyle);
         }
         if (!upgradesOpen) return;
 
