@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum YardArea { Backyard, FlowerPatch, PondEdge }
+
 // a small backyard made when the game starts.
 public sealed class BackyardMap : MonoBehaviour
 {
@@ -10,12 +12,12 @@ public sealed class BackyardMap : MonoBehaviour
     private Vector2 center;
     private float halfWide;
     private float halfTall;
-    private bool flowerPatch;
+    private YardArea area;
 
-    public bool SetArea(bool useFlowers)
+    public bool SetArea(YardArea nextArea)
     {
-        if (flowerPatch == useFlowers) return false;
-        flowerPatch = useFlowers;
+        if (area == nextArea) return false;
+        area = nextArea;
         yard.SetActive(false);
         Destroy(yard);
         foreach (Object piece in artwork)
@@ -61,9 +63,9 @@ public sealed class BackyardMap : MonoBehaviour
 
     private void BuildYard()
     {
-        yard = new GameObject("Backyard");
+        yard = new GameObject(area.ToString());
 
-        Sprite grass = MakeSprite(DrawGrass(flowerPatch), 32);
+        Sprite grass = MakeSprite(DrawGrass(area), 32);
         GameObject ground = new GameObject("Grass");
         ground.transform.SetParent(yard.transform);
         ground.transform.position = center;
@@ -81,7 +83,7 @@ public sealed class BackyardMap : MonoBehaviour
 
         Sprite rock = MakeSprite(DrawRock(), 24);
         Sprite bush = MakeSprite(DrawBush(), 24);
-        if (flowerPatch)
+        if (area == YardArea.FlowerPatch)
         {
             MakeObstacle("Rock", center + new Vector2(-halfWide * 0.55f, halfTall * 0.30f), rock, 1.25f);
             MakeObstacle("Rock", center + new Vector2(halfWide * 0.54f, -halfTall * 0.40f), rock, 1.1f);
@@ -89,10 +91,26 @@ public sealed class BackyardMap : MonoBehaviour
             MakeObstacle("Bush", center + new Vector2(halfWide * 0.52f, halfTall * 0.52f), bush, 1.35f);
             MakeObstacle("Bush", center + new Vector2(0f, halfTall * 0.65f), bush, 1.1f);
             Sprite flower = MakeSprite(DrawFlower(), 24);
-            MakeFlower(center + new Vector2(-halfWide * 0.27f, halfTall * 0.40f), flower);
-            MakeFlower(center + new Vector2(halfWide * 0.25f, halfTall * 0.24f), flower);
-            MakeFlower(center + new Vector2(-halfWide * 0.18f, -halfTall * 0.55f), flower);
-            MakeFlower(center + new Vector2(halfWide * 0.42f, -halfTall * 0.62f), flower);
+            MakeDecoration("Flower", center + new Vector2(-halfWide * 0.27f, halfTall * 0.40f), flower);
+            MakeDecoration("Flower", center + new Vector2(halfWide * 0.25f, halfTall * 0.24f), flower);
+            MakeDecoration("Flower", center + new Vector2(-halfWide * 0.18f, -halfTall * 0.55f), flower);
+            MakeDecoration("Flower", center + new Vector2(halfWide * 0.42f, -halfTall * 0.62f), flower);
+            return;
+        }
+        if (area == YardArea.PondEdge)
+        {
+            Sprite water = MakeSprite(DrawPond(), 32);
+            Sprite lily = MakeSprite(DrawLily(), 24);
+            float pondSize = Mathf.Min(4.2f, halfWide * 0.8f);
+            Vector2 pond = center + new Vector2(halfWide * 0.48f, halfTall * 0.05f);
+            MakeObstacle("Pond", pond, water, pondSize, 0);
+            MakeDecoration("Lily pad", pond + new Vector2(-pondSize * 0.15f, pondSize * 0.08f), lily, 1);
+            MakeDecoration("Lily pad", pond + new Vector2(pondSize * 0.15f, -pondSize * 0.12f), lily, 1);
+            MakeObstacle("Rock", center + new Vector2(-halfWide * 0.48f, halfTall * 0.46f), rock, 1.35f);
+            MakeObstacle("Rock", center + new Vector2(-halfWide * 0.39f, -halfTall * 0.52f), rock, 1.2f);
+            MakeObstacle("Bush", center + new Vector2(-halfWide * 0.66f, halfTall * 0.02f), bush, 1.3f);
+            MakeObstacle("Bush", center + new Vector2(halfWide * 0.68f, halfTall * 0.56f), bush, 1.25f);
+            MakeObstacle("Bush", center + new Vector2(halfWide * 0.67f, -halfTall * 0.55f), bush, 1.2f);
             return;
         }
         MakeObstacle("Rock", center + new Vector2(-halfWide * 0.37f, halfTall * 0.18f), rock, 1.45f);
@@ -116,7 +134,7 @@ public sealed class BackyardMap : MonoBehaviour
         wall.AddComponent<BoxCollider2D>().size = size;
     }
 
-    private void MakeObstacle(string name, Vector2 spot, Sprite sprite, float scale)
+    private void MakeObstacle(string name, Vector2 spot, Sprite sprite, float scale, int order = 1)
     {
         GameObject thing = new GameObject(name);
         thing.transform.SetParent(yard.transform);
@@ -124,18 +142,20 @@ public sealed class BackyardMap : MonoBehaviour
         thing.transform.localScale = Vector3.one * scale;
         SpriteRenderer picture = thing.AddComponent<SpriteRenderer>();
         picture.sprite = sprite;
-        picture.sortingOrder = 1;
+        picture.sortingOrder = order;
         CircleCollider2D hitbox = thing.AddComponent<CircleCollider2D>();
         hitbox.radius = 0.42f;
         obstacles.Add(hitbox);
     }
 
-    private void MakeFlower(Vector2 spot, Sprite sprite)
+    private void MakeDecoration(string name, Vector2 spot, Sprite sprite, int order = 0)
     {
-        GameObject flower = new GameObject("Flower");
-        flower.transform.SetParent(yard.transform);
-        flower.transform.position = spot;
-        flower.AddComponent<SpriteRenderer>().sprite = sprite;
+        GameObject decoration = new GameObject(name);
+        decoration.transform.SetParent(yard.transform);
+        decoration.transform.position = spot;
+        SpriteRenderer picture = decoration.AddComponent<SpriteRenderer>();
+        picture.sprite = sprite;
+        picture.sortingOrder = order;
     }
 
     private Sprite MakeSprite(Texture2D pixels, int pixelsPerUnit)
@@ -149,7 +169,7 @@ public sealed class BackyardMap : MonoBehaviour
         return sprite;
     }
 
-    private static Texture2D DrawGrass(bool flowerPatch)
+    private static Texture2D DrawGrass(YardArea area)
     {
         Texture2D pixels = new Texture2D(32, 32, TextureFormat.RGBA32, false);
         Color[] colors = new Color[32 * 32];
@@ -157,10 +177,14 @@ public sealed class BackyardMap : MonoBehaviour
         for (int x = 0; x < 32; x++)
         {
             int fleck = (x * 17 + y * 43 + x * y * 3) % 37;
-            if (flowerPatch)
+            if (area == YardArea.FlowerPatch)
                 colors[y * 32 + x] = fleck < 2 ? new Color(0.90f, 0.60f, 0.75f)
                     : fleck < 5 ? new Color(0.70f, 0.70f, 0.26f)
                     : new Color(0.38f, 0.58f, 0.25f);
+            else if (area == YardArea.PondEdge)
+                colors[y * 32 + x] = fleck < 3 ? new Color(0.71f, 0.68f, 0.43f)
+                    : fleck < 8 ? new Color(0.51f, 0.63f, 0.34f)
+                    : new Color(0.57f, 0.64f, 0.38f);
             else
                 colors[y * 32 + x] = fleck < 3 ? new Color(0.28f, 0.48f, 0.20f)
                     : fleck < 7 ? new Color(0.36f, 0.57f, 0.25f)
@@ -238,6 +262,42 @@ public sealed class BackyardMap : MonoBehaviour
             colors[y * 24 + x] = petal < 30 ? new Color(0.93f, 0.42f, 0.66f)
                 : stem || leaves ? new Color(0.15f, 0.43f, 0.18f) : Color.clear;
             if (petal < 7) colors[y * 24 + x] = new Color(1f, 0.82f, 0.22f);
+        }
+        pixels.SetPixels(colors);
+        pixels.Apply();
+        return pixels;
+    }
+
+    private static Texture2D DrawPond()
+    {
+        Texture2D pixels = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+        Color[] colors = new Color[32 * 32];
+        for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++)
+        {
+            float edge = new Vector2(x - 15.5f, y - 15.5f).magnitude;
+            colors[y * 32 + x] = edge > 13.5f ? Color.clear
+                : edge > 11.5f ? new Color(0.68f, 0.61f, 0.38f)
+                : (x + y) % 9 < 2 ? new Color(0.23f, 0.58f, 0.65f)
+                : new Color(0.13f, 0.45f, 0.57f);
+        }
+        pixels.SetPixels(colors);
+        pixels.Apply();
+        return pixels;
+    }
+
+    private static Texture2D DrawLily()
+    {
+        Texture2D pixels = new Texture2D(24, 24, TextureFormat.RGBA32, false);
+        Color[] colors = new Color[24 * 24];
+        for (int y = 0; y < 24; y++)
+        for (int x = 0; x < 24; x++)
+        {
+            float edge = new Vector2(x - 11.5f, y - 11.5f).magnitude;
+            bool notch = x > 12 && y > 12 && y - x < 3;
+            colors[y * 24 + x] = edge > 10f || notch ? Color.clear
+                : edge > 8f ? new Color(0.15f, 0.33f, 0.17f)
+                : new Color(0.34f, 0.66f, 0.26f);
         }
         pixels.SetPixels(colors);
         pixels.Apply();

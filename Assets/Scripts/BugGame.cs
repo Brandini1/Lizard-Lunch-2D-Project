@@ -7,6 +7,7 @@ public sealed class BugGame : MonoBehaviour
 {
     private const int MaxLevel = 5;
     private const int FlowerPatchUnlock = 15;
+    private const int PondEdgeUnlock = 35;
     private const float ComboSeconds = 4f;
     private static readonly Vector2[] FlowerSpots =
     {
@@ -112,7 +113,7 @@ public sealed class BugGame : MonoBehaviour
         if (titleOpen)
         {
             if (keys != null && (keys.enterKey.wasPressedThisFrame || keys.spaceKey.wasPressedThisFrame))
-                StartGame(false);
+                StartGame(YardArea.Backyard);
             return;
         }
         if (keys != null && keys.escapeKey.wasPressedThisFrame)
@@ -446,21 +447,24 @@ public sealed class BugGame : MonoBehaviour
         if (titleOpen)
         {
             float x = Screen.width * 0.5f - 210f;
-            float y = Screen.height * 0.5f - 170f;
-            GUI.Box(new Rect(x, y, 420, 340), "");
+            float y = Screen.height * 0.5f - 200f;
+            GUI.Box(new Rect(x, y, 420, 400), "");
             GUI.Label(new Rect(x + 20, y + 18, 380, 55), "Lizard Lunch", titleStyle);
             GUI.Label(new Rect(x + 82, y + 76, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
             GUI.Label(new Rect(x + 82, y + 105, 300, 25), "Move: WASD / arrows    Tongue: click");
             GUI.Label(new Rect(x + 82, y + 134, 300, 25), "E: upgrades    Esc: pause");
-            if (GUI.Button(new Rect(x + 50, y + 181, 320, 48), "Play Backyard", playStyle)) StartGame(false);
+            if (GUI.Button(new Rect(x + 50, y + 172, 320, 44), "Play Backyard", playStyle)) StartGame(YardArea.Backyard);
             GUI.enabled = score >= FlowerPatchUnlock;
-            if (GUI.Button(new Rect(x + 50, y + 239, 320, 48), "Play Flower Patch", playStyle)) StartGame(true);
+            if (GUI.Button(new Rect(x + 50, y + 224, 320, 44), "Play Flower Patch", playStyle)) StartGame(YardArea.FlowerPatch);
+            GUI.enabled = score >= PondEdgeUnlock;
+            if (GUI.Button(new Rect(x + 50, y + 276, 320, 44), "Play Pond Edge", playStyle)) StartGame(YardArea.PondEdge);
             GUI.enabled = true;
-            string flowerHint = score < FlowerPatchUnlock
-                ? $"Unlock at {FlowerPatchUnlock} bugs ({score}/{FlowerPatchUnlock})"
-                : "Butterflies are worth 4 coins";
-            if (AllUpgradesMaxed) flowerHint = "All upgrades maxed!";
-            GUI.Label(new Rect(x + 80, y + 294, 300, 32), flowerHint,
+            string areaHint = score < FlowerPatchUnlock
+                ? $"Flower patch: {score}/{FlowerPatchUnlock} bugs"
+                : score < PondEdgeUnlock ? $"Pond edge: {score}/{PondEdgeUnlock} bugs"
+                : "All areas unlocked!";
+            if (AllUpgradesMaxed) areaHint = "All upgrades maxed!";
+            GUI.Label(new Rect(x + 80, y + 342, 300, 32), areaHint,
                 AllUpgradesMaxed ? rewardStyle : GUI.skin.label);
             return;
         }
@@ -520,12 +524,12 @@ public sealed class BugGame : MonoBehaviour
     private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
         ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
 
-    private void StartGame(bool useFlowers)
+    private void StartGame(YardArea area)
     {
         rewardAmount = 0;
         combo = 0;
         lastCatchTime = float.NegativeInfinity;
-        if (backyard.SetArea(useFlowers))
+        if (backyard.SetArea(area))
         {
             Camera view = Camera.main;
             Rigidbody2D body = GetComponent<Rigidbody2D>();
@@ -535,6 +539,7 @@ public sealed class BugGame : MonoBehaviour
             RespawnAnt();
             RespawnBeetle();
         }
+        bool useFlowers = area == YardArea.FlowerPatch;
         if (useFlowers && butterfly == null)
         {
             butterflyPixels = DrawButterfly();
