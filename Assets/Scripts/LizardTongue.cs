@@ -24,6 +24,8 @@ public sealed class LizardTongue : MonoBehaviour
     private bool isShooting;
 
     public bool IsOut => isShooting;
+    public float Readiness => isShooting ? 0f : cooldownSeconds <= 0f ? 1f
+        : Mathf.Clamp01(1f - (nextShotTime - Time.time) / cooldownSeconds);
     public float Reach
     {
         get => reach;

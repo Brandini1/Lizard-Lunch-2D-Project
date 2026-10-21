@@ -40,6 +40,7 @@ public sealed class BugGame : MonoBehaviour
     private AudioClip flickSound;
     private AudioClip catchSound;
     private AudioClip upgradeSound;
+    private AudioClip biteSound;
     private GUIStyle scoreStyle;
     private GUIStyle titleStyle;
     private GUIStyle playStyle;
@@ -62,6 +63,15 @@ public sealed class BugGame : MonoBehaviour
     private int combo;
     private float lastCatchTime = float.NegativeInfinity;
     private float celebrationUntil;
+    private string shopNotice;
+    private float noticeUntil;
+    private GameObject redAnt;
+    private GameObject otherRedAnt;
+    private Texture2D redAntPixels;
+    private Sprite redAntSprite;
+    private int hearts = 3;
+    private float safeUntil;
+    private float hurtUntil;
 
     private bool AllUpgradesMaxed => tongueLevel == MaxLevel && speedLevel == MaxLevel && cooldownLevel == MaxLevel;
 
@@ -77,6 +87,7 @@ public sealed class BugGame : MonoBehaviour
         flickSound = MakeSound("Tongue flick", 0.10f, 700f, 280f);
         catchSound = MakeSound("Bug caught", 0.18f, 420f, 820f);
         upgradeSound = MakeSound("Upgrade bought", 0.24f, 520f, 1040f);
+        biteSound = MakeSound("Ant bite", 0.16f, 160f, 65f);
         backyard = GetComponent<BackyardMap>() ?? gameObject.AddComponent<BackyardMap>();
         flyPixels = DrawFly();
         flySprite = Sprite.Create(flyPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
@@ -105,6 +116,21 @@ public sealed class BugGame : MonoBehaviour
         beetle.transform.position = new Vector3(2.7f, 1.5f, 0f);
         beetleTarget = NearbySpot(beetle.transform.position);
         beetleRestUntil = Time.time + 0.6f;
+        redAntPixels = DrawAnt();
+        Color[] redDots = redAntPixels.GetPixels();
+        for (int i = 0; i < redDots.Length; i++)
+            if (redDots[i].a > 0f) redDots[i] = Color.Lerp(redDots[i], new Color(0.95f, 0.12f, 0.08f), 0.65f);
+        redAntPixels.SetPixels(redDots);
+        redAntPixels.Apply();
+        redAntSprite = Sprite.Create(redAntPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+        redAnt = new GameObject("Red ant");
+        SpriteRenderer redPicture = redAnt.AddComponent<SpriteRenderer>();
+        redPicture.sprite = redAntSprite;
+        redPicture.sortingOrder = 2;
+        redAnt.transform.position = NewBugSpot();
+        otherRedAnt = Instantiate(redAnt);
+        otherRedAnt.name = "Red ant buddy";
+        otherRedAnt.transform.position = NewBugSpot();
     }
 
     private void Update()
@@ -137,6 +163,8 @@ public sealed class BugGame : MonoBehaviour
         MoveAnt();
         MoveBeetle();
         MoveButterfly();
+        MoveRedAnt(redAnt);
+        MoveRedAnt(otherRedAnt);
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -229,6 +257,50 @@ public sealed class BugGame : MonoBehaviour
         else butterfly.transform.position = next;
     }
 
+    private void MoveRedAnt(GameObject hunter)
+    {
+        Vector2 here = hunter.transform.position;
+        Vector2 chase = ((Vector2)transform.position - here).normalized * (1.8f * Time.deltaTime);
+        // try a step around the rock when the direct route is blocked.
+        for (int turn = 0; turn < 5; turn++)
+        {
+            float angle = ((turn + 1) / 2) * (turn % 2 == 0 ? -1f : 1f) * Mathf.PI * 0.25f;
+            Vector2 step = new Vector2(chase.x * Mathf.Cos(angle) - chase.y * Mathf.Sin(angle),
+                chase.x * Mathf.Sin(angle) + chase.y * Mathf.Cos(angle));
+            if (backyard.IsBlocked(here + step, 0.25f)) continue;
+            hunter.transform.position = here + step;
+            break;
+        }
+        hunter.GetComponent<SpriteRenderer>().flipX = chase.x < 0f;
+    }
+
+    private void CheckBite()
+    {
+        if (Time.time < safeUntil) return;
+        GameObject attacker = Vector2.Distance(redAnt.transform.position, transform.position) <= 0.7f
+            ? redAnt : otherRedAnt;
+        if (Vector2.Distance(attacker.transform.position, transform.position) > 0.7f) return;
+        hearts--;
+        sounds.PlayOneShot(biteSound);
+        hurtUntil = Time.time + 0.2f;
+        safeUntil = Time.time + 1.5f;
+        combo = 0;
+        lastCatchTime = float.NegativeInfinity;
+        shopNotice = "Ouch! Catch the red ant!";
+        noticeUntil = Time.time + 1.5f;
+        // give the lizard some space before the ant comes back.
+        attacker.transform.position = NewBugSpot();
+        if (hearts > 0) return;
+        Camera view = Camera.main;
+        Rigidbody2D body = GetComponent<Rigidbody2D>();
+        body.position = view != null ? (Vector2)view.transform.position : Vector2.zero;
+        body.linearVelocity = Vector2.zero;
+        hearts = 3;
+        safeUntil = Time.time + 3f;
+        shopNotice = "Caught by the ant! Try again.";
+        noticeUntil = Time.time + 3f;
+    }
+
     private void LateUpdate()
     {
         if (paused || titleOpen) return;
@@ -236,6 +308,7 @@ public sealed class BugGame : MonoBehaviour
         {
             caughtThisFlick = false;
             heardThisFlick = false;
+            CheckBite();
             return;
         }
         if (!heardThisFlick)
@@ -243,23 +316,26 @@ public sealed class BugGame : MonoBehaviour
             sounds.PlayOneShot(flickSound);
             heardThisFlick = true;
         }
-        if (caughtThisFlick) return;
+        if (caughtThisFlick) { CheckBite(); return; }
 
         Vector2 start = tongue.StartPoint;
         Vector2 span = tongue.TipPoint - start;
-        if (span.sqrMagnitude < 0.001f) return;
+        if (span.sqrMagnitude < 0.001f) { CheckBite(); return; }
 
         bool caughtFly = TongueTouches(fly, start, span);
         bool caughtAnt = !caughtFly && TongueTouches(ant, start, span);
         bool caughtBeetle = !caughtFly && !caughtAnt && TongueTouches(beetle, start, span);
         bool caughtButterfly = !caughtFly && !caughtAnt && !caughtBeetle && TongueTouches(butterfly, start, span);
-        if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly) return;
+        GameObject enemyCaught = TongueTouches(redAnt, start, span) ? redAnt
+            : TongueTouches(otherRedAnt, start, span) ? otherRedAnt : null;
+        bool caughtRedAnt = !caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && enemyCaught != null;
+        if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && !caughtRedAnt) { CheckBite(); return; }
 
-        GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : butterfly;
+        GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : caughtButterfly ? butterfly : enemyCaught;
         rewardSpot = caught.transform.position;
         combo = Time.time - lastCatchTime <= ComboSeconds ? combo + 1 : 1;
         lastCatchTime = Time.time;
-        rewardAmount = (caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1)
+        rewardAmount = (caughtButterfly ? 4 : caughtBeetle || caughtRedAnt ? 3 : caughtAnt ? 2 : 1)
             + (combo >= 3 ? 1 : 0);
         rewardStarted = Time.time;
         score++;
@@ -270,7 +346,9 @@ public sealed class BugGame : MonoBehaviour
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
         else if (caughtBeetle) RespawnBeetle();
-        else RespawnButterfly();
+        else if (caughtButterfly) RespawnButterfly();
+        else enemyCaught.transform.position = NewBugSpot();
+        CheckBite();
     }
 
     private static bool TongueTouches(GameObject bug, Vector2 start, Vector2 span)
@@ -316,8 +394,19 @@ public sealed class BugGame : MonoBehaviour
 
     private bool SpendOn(int level)
     {
-        if (level >= MaxLevel || coins < level + 2) return false;
+        noticeUntil = Time.time + 2f;
+        if (level >= MaxLevel)
+        {
+            shopNotice = "Already maxed out!";
+            return false;
+        }
+        if (coins < level + 2)
+        {
+            shopNotice = $"Need {level + 2 - coins} more coins";
+            return false;
+        }
         coins -= level + 2;
+        shopNotice = "Upgrade bought!";
         sounds.PlayOneShot(upgradeSound);
         return true;
     }
@@ -483,14 +572,32 @@ public sealed class BugGame : MonoBehaviour
             }
             return;
         }
+        if (Time.time < hurtUntil)
+        {
+            Color oldColor = GUI.color;
+            GUI.color = new Color(1f, 0.12f, 0.08f, (hurtUntil - Time.time) * 0.8f);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = oldColor;
+        }
         GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
+        GUI.Label(new Rect(Screen.width - 190, 16, 180, 40), $"Hearts: {hearts}/3", rewardStyle);
+        if (Time.time < safeUntil)
+            GUI.Label(new Rect(Screen.width - 190, 52, 180, 30), "Recovering...", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        float ready = tongue.Readiness;
+        GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
+            ready >= 1f ? "Tongue ready • click" : tongue.IsOut ? "Catch it!" : "Getting ready...", rewardStyle);
+        DrawMeter(new Rect(24, Screen.height - 30, 280, 10), ready, new Color(1f, 0.49f, 0.65f));
+        if (Time.time < noticeUntil)
+            GUI.Label(new Rect(Screen.width * 0.5f - 180, Screen.height - 108, 360, 35), shopNotice, rewardStyle);
         float comboLeft = ComboSeconds - (Time.time - lastCatchTime);
         if (combo >= 2 && comboLeft > 0f)
         {
             string bonus = combo >= 3 ? "  +1 coin per catch" : "";
             GUI.Label(new Rect(20, upgradesOpen ? 196 : 88, 540, 40),
                 $"Combo x{combo}  {comboLeft:0.0}s{bonus}", scoreStyle);
+            DrawMeter(new Rect(24, upgradesOpen ? 236 : 128, 240, 6), comboLeft / ComboSeconds,
+                new Color(1f, 0.88f, 0.25f));
         }
         if (rewardAmount > 0 && Time.time - rewardStarted < 0.9f)
         {
@@ -500,6 +607,18 @@ public sealed class BugGame : MonoBehaviour
                 Vector3 screen = view.WorldToScreenPoint(rewardSpot);
                 float fade = 1f - (Time.time - rewardStarted) / 0.9f;
                 Color oldColor = GUI.color;
+                // a little burst stays at the catch spot after the bug respawns.
+                for (int spark = 0; spark < 10; spark++)
+                {
+                    float angle = spark * Mathf.PI * 0.2f;
+                    float spread = (1f - fade) * (spark % 2 == 0 ? 70f : 45f);
+                    float size = 3f + fade * 4f;
+                    GUI.color = spark % 2 == 0 ? new Color(1f, 0.85f, 0.2f, fade)
+                        : new Color(0.7f, 1f, 0.45f, fade);
+                    GUI.DrawTexture(new Rect(screen.x + Mathf.Cos(angle) * spread - size * 0.5f,
+                        Screen.height - screen.y + Mathf.Sin(angle) * spread - size * 0.5f, size, size),
+                        Texture2D.whiteTexture);
+                }
                 GUI.color = new Color(1f, 1f, 1f, fade);
                 GUI.Label(new Rect(screen.x - 65f, Screen.height - screen.y - 40f * (1f - fade), 130f, 35f),
                     $"+{rewardAmount} coins", rewardStyle);
@@ -524,8 +643,20 @@ public sealed class BugGame : MonoBehaviour
     private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
         ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
 
+    private static void DrawMeter(Rect box, float fill, Color color)
+    {
+        Color oldColor = GUI.color;
+        GUI.color = new Color(0.08f, 0.12f, 0.09f, 0.85f);
+        GUI.DrawTexture(box, Texture2D.whiteTexture);
+        box.width *= Mathf.Clamp01(fill);
+        GUI.color = color;
+        GUI.DrawTexture(box, Texture2D.whiteTexture);
+        GUI.color = oldColor;
+    }
+
     private void StartGame(YardArea area)
     {
+        noticeUntil = 0f;
         rewardAmount = 0;
         combo = 0;
         lastCatchTime = float.NegativeInfinity;
@@ -538,7 +669,10 @@ public sealed class BugGame : MonoBehaviour
             MoveFly();
             RespawnAnt();
             RespawnBeetle();
+            redAnt.transform.position = NewBugSpot();
+            otherRedAnt.transform.position = NewBugSpot();
         }
+        safeUntil = Time.time + 1.5f;
         bool useFlowers = area == YardArea.FlowerPatch;
         if (useFlowers && butterfly == null)
         {
@@ -683,6 +817,10 @@ public sealed class BugGame : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (redAnt != null) Destroy(redAnt);
+        if (otherRedAnt != null) Destroy(otherRedAnt);
+        if (redAntSprite != null) Destroy(redAntSprite);
+        if (redAntPixels != null) Destroy(redAntPixels);
         if (fly != null) Destroy(fly);
         if (flySprite != null) Destroy(flySprite);
         if (flyPixels != null) Destroy(flyPixels);
@@ -698,6 +836,7 @@ public sealed class BugGame : MonoBehaviour
         if (flickSound != null) Destroy(flickSound);
         if (catchSound != null) Destroy(catchSound);
         if (upgradeSound != null) Destroy(upgradeSound);
+        if (biteSound != null) Destroy(biteSound);
     }
 
     private void OnDisable()
