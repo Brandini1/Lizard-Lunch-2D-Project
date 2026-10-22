@@ -72,6 +72,10 @@ public sealed class BugGame : MonoBehaviour
     private int hearts = 3;
     private float safeUntil;
     private float hurtUntil;
+    private GameObject berry;
+    private Texture2D berryPixels;
+    private Sprite berrySprite;
+    private float nextBerryTime;
 
     private bool AllUpgradesMaxed => tongueLevel == MaxLevel && speedLevel == MaxLevel && cooldownLevel == MaxLevel;
 
@@ -131,6 +135,13 @@ public sealed class BugGame : MonoBehaviour
         otherRedAnt = Instantiate(redAnt);
         otherRedAnt.name = "Red ant buddy";
         otherRedAnt.transform.position = NewBugSpot();
+        berryPixels = DrawBerry();
+        berrySprite = Sprite.Create(berryPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+        berry = new GameObject("Healing berry");
+        SpriteRenderer fruit = berry.AddComponent<SpriteRenderer>();
+        fruit.sprite = berrySprite;
+        fruit.sortingOrder = 2;
+        berry.SetActive(false);
     }
 
     private void Update()
@@ -165,6 +176,7 @@ public sealed class BugGame : MonoBehaviour
         MoveButterfly();
         MoveRedAnt(redAnt);
         MoveRedAnt(otherRedAnt);
+        UpdateBerry();
         if (fly == null || Time.time < restUntil) return;
 
         Vector2 here = fly.transform.position;
@@ -255,6 +267,36 @@ public sealed class BugGame : MonoBehaviour
         Vector2 next = Vector2.MoveTowards(here, butterflyTarget, 1.1f * Time.deltaTime);
         if (backyard.IsBlocked(next, 0.22f)) butterflyTarget = FlowerSpot(here);
         else butterfly.transform.position = next;
+    }
+
+    private void UpdateBerry()
+    {
+        if (hearts >= 3)
+        {
+            berry.SetActive(false);
+            return;
+        }
+        if (!berry.activeSelf && Time.time >= nextBerryTime)
+        {
+            Vector2 spot = NewBugSpot();
+            // try again shortly if the yard didn't have a clear spot.
+            if (backyard.IsBlocked(spot, 0.35f) || Vector2.Distance(spot, transform.position) < 1.5f)
+            {
+                nextBerryTime = Time.time + 1f;
+                return;
+            }
+            berry.transform.position = spot;
+            berry.SetActive(true);
+        }
+        if (!berry.activeSelf) return;
+        berry.transform.localScale = Vector3.one * (1f + Mathf.Sin(Time.time * 5f) * 0.08f);
+        if (Vector2.Distance(berry.transform.position, transform.position) > 0.55f) return;
+        hearts++;
+        berry.SetActive(false);
+        nextBerryTime = Time.time + 12f;
+        sounds.PlayOneShot(upgradeSound);
+        shopNotice = "Berry snack! +1 heart";
+        noticeUntil = Time.time + 2f;
     }
 
     private void MoveRedAnt(GameObject hunter)
@@ -583,6 +625,8 @@ public sealed class BugGame : MonoBehaviour
         GUI.Label(new Rect(Screen.width - 190, 16, 180, 40), $"Hearts: {hearts}/3", rewardStyle);
         if (Time.time < safeUntil)
             GUI.Label(new Rect(Screen.width - 190, 52, 180, 30), "Recovering...", rewardStyle);
+        else if (hearts < 3)
+            GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
         float ready = tongue.Readiness;
         GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
@@ -662,6 +706,7 @@ public sealed class BugGame : MonoBehaviour
         lastCatchTime = float.NegativeInfinity;
         if (backyard.SetArea(area))
         {
+            berry.SetActive(false);
             Camera view = Camera.main;
             Rigidbody2D body = GetComponent<Rigidbody2D>();
             body.position = view != null ? (Vector2)view.transform.position : Vector2.zero;
@@ -725,6 +770,27 @@ public sealed class BugGame : MonoBehaviour
                 : wingLeft < 1f || wingRight < 1f ? new Color(0.72f, 0.91f, 0.89f, 0.9f)
                 : Color.clear;
             if ((x == 10 || x == 13) && y == 14) colors[y * 24 + x] = new Color(1f, 0.78f, 0.20f);
+        }
+        dots.SetPixels(colors);
+        dots.Apply();
+        return dots;
+    }
+
+    private static Texture2D DrawBerry()
+    {
+        Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false);
+        dots.filterMode = FilterMode.Point;
+        Color[] colors = new Color[24 * 24];
+        for (int y = 0; y < 24; y++)
+        for (int x = 0; x < 24; x++)
+        {
+            float round = Mathf.Pow((x - 11.5f) / 7f, 2) + Mathf.Pow((y - 10f) / 7f, 2);
+            bool leaf = y >= 17 && y <= 20 && x >= 12 && x <= 20 - (y - 17);
+            colors[y * 24 + x] = leaf ? new Color(0.45f, 0.85f, 0.22f)
+                : round < 0.7f ? new Color(0.80f, 0.25f, 0.66f)
+                : round < 1f ? new Color(0.35f, 0.12f, 0.38f) : Color.clear;
+            if (x >= 8 && x <= 10 && y >= 12 && y <= 14)
+                colors[y * 24 + x] = new Color(1f, 0.75f, 0.90f);
         }
         dots.SetPixels(colors);
         dots.Apply();
@@ -817,6 +883,9 @@ public sealed class BugGame : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (berry != null) Destroy(berry);
+        if (berrySprite != null) Destroy(berrySprite);
+        if (berryPixels != null) Destroy(berryPixels);
         if (redAnt != null) Destroy(redAnt);
         if (otherRedAnt != null) Destroy(otherRedAnt);
         if (redAntSprite != null) Destroy(redAntSprite);
