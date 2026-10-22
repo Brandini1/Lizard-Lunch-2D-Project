@@ -53,6 +53,8 @@ public sealed class BugGame : MonoBehaviour
     private bool upgradesOpen;
     private bool titleOpen = true;
     private bool paused;
+    private bool gameOver;
+    private YardArea currentArea;
     private bool caughtThisFlick;
     private bool heardThisFlick;
     private Vector2 nextPerch;
@@ -146,6 +148,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void Update()
     {
+        if (gameOver) return;
         Keyboard keys = Keyboard.current;
         if (titleOpen)
         {
@@ -333,19 +336,17 @@ public sealed class BugGame : MonoBehaviour
         // give the lizard some space before the ant comes back.
         attacker.transform.position = NewBugSpot();
         if (hearts > 0) return;
-        Camera view = Camera.main;
-        Rigidbody2D body = GetComponent<Rigidbody2D>();
-        body.position = view != null ? (Vector2)view.transform.position : Vector2.zero;
-        body.linearVelocity = Vector2.zero;
-        hearts = 3;
-        safeUntil = Time.time + 3f;
-        shopNotice = "Caught by the ant! Try again.";
-        noticeUntil = Time.time + 3f;
+        // the third bite ends the run until the player retries.
+        gameOver = true;
+        upgradesOpen = false;
+        tongue.enabled = false;
+        GetComponent<Rigidbody2D>().linearVelocity = Vector2.zero;
+        Time.timeScale = 0f;
     }
 
     private void LateUpdate()
     {
-        if (paused || titleOpen) return;
+        if (paused || titleOpen || gameOver) return;
         if (!tongue.IsOut)
         {
             caughtThisFlick = false;
@@ -575,6 +576,18 @@ public sealed class BugGame : MonoBehaviour
             rewardStyle = new GUIStyle(scoreStyle) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
             rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
         }
+        if (gameOver)
+        {
+            float x = Screen.width * 0.5f - 210f;
+            float y = Screen.height * 0.5f - 130f;
+            GUI.Box(new Rect(x, y, 420, 260), "");
+            GUI.Label(new Rect(x + 20, y + 20, 380, 55), "Game over", titleStyle);
+            GUI.Label(new Rect(x + 20, y + 85, 380, 40), "Hearts: 0/3", rewardStyle);
+            GUI.Label(new Rect(x + 20, y + 125, 380, 35), "The ants got your last heart.", rewardStyle);
+            if (GUI.Button(new Rect(x + 70, y + 185, 280, 48), "Try again", playStyle))
+                StartGame(currentArea);
+            return;
+        }
         if (titleOpen)
         {
             float x = Screen.width * 0.5f - 210f;
@@ -704,7 +717,8 @@ public sealed class BugGame : MonoBehaviour
         rewardAmount = 0;
         combo = 0;
         lastCatchTime = float.NegativeInfinity;
-        if (backyard.SetArea(area))
+        bool changedArea = backyard.SetArea(area);
+        if (changedArea || gameOver)
         {
             berry.SetActive(false);
             Camera view = Camera.main;
@@ -717,6 +731,17 @@ public sealed class BugGame : MonoBehaviour
             redAnt.transform.position = NewBugSpot();
             otherRedAnt.transform.position = NewBugSpot();
         }
+        if (gameOver)
+        {
+            hearts = 3;
+            nextBerryTime = 0f;
+            hurtUntil = 0f;
+            caughtThisFlick = false;
+            heardThisFlick = false;
+            tongue.enabled = true;
+            gameOver = false;
+        }
+        currentArea = area;
         safeUntil = Time.time + 1.5f;
         bool useFlowers = area == YardArea.FlowerPatch;
         if (useFlowers && butterfly == null)
@@ -910,7 +935,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void OnDisable()
     {
-        if (paused || titleOpen) Time.timeScale = 1f;
+        if (paused || titleOpen || gameOver) Time.timeScale = 1f;
         paused = false;
     }
 }
