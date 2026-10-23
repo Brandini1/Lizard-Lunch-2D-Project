@@ -67,10 +67,7 @@ public sealed class BugGame : MonoBehaviour
     private float celebrationUntil;
     private string shopNotice;
     private float noticeUntil;
-    private GameObject redAnt;
-    private GameObject otherRedAnt;
-    private Texture2D redAntPixels;
-    private Sprite redAntSprite;
+    private EnemyWaves waves;
     private int hearts = 3;
     private float safeUntil;
     private float hurtUntil;
@@ -122,21 +119,7 @@ public sealed class BugGame : MonoBehaviour
         beetle.transform.position = new Vector3(2.7f, 1.5f, 0f);
         beetleTarget = NearbySpot(beetle.transform.position);
         beetleRestUntil = Time.time + 0.6f;
-        redAntPixels = DrawAnt();
-        Color[] redDots = redAntPixels.GetPixels();
-        for (int i = 0; i < redDots.Length; i++)
-            if (redDots[i].a > 0f) redDots[i] = Color.Lerp(redDots[i], new Color(0.95f, 0.12f, 0.08f), 0.65f);
-        redAntPixels.SetPixels(redDots);
-        redAntPixels.Apply();
-        redAntSprite = Sprite.Create(redAntPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
-        redAnt = new GameObject("Red ant");
-        SpriteRenderer redPicture = redAnt.AddComponent<SpriteRenderer>();
-        redPicture.sprite = redAntSprite;
-        redPicture.sortingOrder = 2;
-        redAnt.transform.position = NewBugSpot();
-        otherRedAnt = Instantiate(redAnt);
-        otherRedAnt.name = "Red ant buddy";
-        otherRedAnt.transform.position = NewBugSpot();
+        waves = gameObject.AddComponent<EnemyWaves>();
         berryPixels = DrawBerry();
         berrySprite = Sprite.Create(berryPixels, new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
         berry = new GameObject("Healing berry");
@@ -177,8 +160,7 @@ public sealed class BugGame : MonoBehaviour
         MoveAnt();
         MoveBeetle();
         MoveButterfly();
-        MoveRedAnt(redAnt);
-        MoveRedAnt(otherRedAnt);
+        waves.Tick();
         UpdateBerry();
         if (fly == null || Time.time < restUntil) return;
 
@@ -302,39 +284,17 @@ public sealed class BugGame : MonoBehaviour
         noticeUntil = Time.time + 2f;
     }
 
-    private void MoveRedAnt(GameObject hunter)
-    {
-        Vector2 here = hunter.transform.position;
-        Vector2 chase = ((Vector2)transform.position - here).normalized * (1.8f * Time.deltaTime);
-        // try a step around the rock when the direct route is blocked.
-        for (int turn = 0; turn < 5; turn++)
-        {
-            float angle = ((turn + 1) / 2) * (turn % 2 == 0 ? -1f : 1f) * Mathf.PI * 0.25f;
-            Vector2 step = new Vector2(chase.x * Mathf.Cos(angle) - chase.y * Mathf.Sin(angle),
-                chase.x * Mathf.Sin(angle) + chase.y * Mathf.Cos(angle));
-            if (backyard.IsBlocked(here + step, 0.25f)) continue;
-            hunter.transform.position = here + step;
-            break;
-        }
-        hunter.GetComponent<SpriteRenderer>().flipX = chase.x < 0f;
-    }
-
     private void CheckBite()
     {
-        if (Time.time < safeUntil) return;
-        GameObject attacker = Vector2.Distance(redAnt.transform.position, transform.position) <= 0.7f
-            ? redAnt : otherRedAnt;
-        if (Vector2.Distance(attacker.transform.position, transform.position) > 0.7f) return;
+        if (Time.time < safeUntil || !waves.TryBite()) return;
         hearts--;
         sounds.PlayOneShot(biteSound);
         hurtUntil = Time.time + 0.2f;
         safeUntil = Time.time + 1.5f;
         combo = 0;
         lastCatchTime = float.NegativeInfinity;
-        shopNotice = "Ouch! Catch the red ant!";
+        shopNotice = "Ouch! Catch the enemy bugs!";
         noticeUntil = Time.time + 1.5f;
-        // give the lizard some space before the ant comes back.
-        attacker.transform.position = NewBugSpot();
         if (hearts > 0) return;
         // the third bite ends the run until the player retries.
         gameOver = true;
@@ -369,16 +329,16 @@ public sealed class BugGame : MonoBehaviour
         bool caughtAnt = !caughtFly && TongueTouches(ant, start, span);
         bool caughtBeetle = !caughtFly && !caughtAnt && TongueTouches(beetle, start, span);
         bool caughtButterfly = !caughtFly && !caughtAnt && !caughtBeetle && TongueTouches(butterfly, start, span);
-        GameObject enemyCaught = TongueTouches(redAnt, start, span) ? redAnt
-            : TongueTouches(otherRedAnt, start, span) ? otherRedAnt : null;
-        bool caughtRedAnt = !caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && enemyCaught != null;
-        if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && !caughtRedAnt) { CheckBite(); return; }
+        Vector2 enemySpot = Vector2.zero;
+        bool caughtEnemy = !caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly
+            && waves.TryCatch(start, span, out enemySpot);
+        if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && !caughtEnemy) { CheckBite(); return; }
 
-        GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : caughtButterfly ? butterfly : enemyCaught;
-        rewardSpot = caught.transform.position;
+        GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : butterfly;
+        rewardSpot = caughtEnemy ? enemySpot : (Vector2)caught.transform.position;
         combo = Time.time - lastCatchTime <= ComboSeconds ? combo + 1 : 1;
         lastCatchTime = Time.time;
-        rewardAmount = (caughtButterfly ? 4 : caughtBeetle || caughtRedAnt ? 3 : caughtAnt ? 2 : 1)
+        rewardAmount = (caughtEnemy ? waves.CoinReward : caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1)
             + (combo >= 3 ? 1 : 0);
         rewardStarted = Time.time;
         score++;
@@ -390,7 +350,6 @@ public sealed class BugGame : MonoBehaviour
         else if (caughtAnt) RespawnAnt();
         else if (caughtBeetle) RespawnBeetle();
         else if (caughtButterfly) RespawnButterfly();
-        else enemyCaught.transform.position = NewBugSpot();
         CheckBite();
     }
 
@@ -583,7 +542,7 @@ public sealed class BugGame : MonoBehaviour
             GUI.Box(new Rect(x, y, 420, 260), "");
             GUI.Label(new Rect(x + 20, y + 20, 380, 55), "Game over", titleStyle);
             GUI.Label(new Rect(x + 20, y + 85, 380, 40), "Hearts: 0/3", rewardStyle);
-            GUI.Label(new Rect(x + 20, y + 125, 380, 35), "The ants got your last heart.", rewardStyle);
+            GUI.Label(new Rect(x + 20, y + 125, 380, 35), $"You reached wave {waves.Wave}.", rewardStyle);
             if (GUI.Button(new Rect(x + 70, y + 185, 280, 48), "Try again", playStyle))
                 StartGame(currentArea);
             return;
@@ -641,6 +600,10 @@ public sealed class BugGame : MonoBehaviour
         else if (hearts < 3)
             GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        string waveLine = waves.BreakLeft > 0f
+            ? $"Wave {waves.Wave} cleared! Next in {Mathf.CeilToInt(waves.BreakLeft)}s"
+            : $"Wave {waves.Wave} • {waves.EnemyName}: {waves.Remaining} left";
+        GUI.Label(new Rect(Screen.width * 0.5f - 240, Screen.height - 155, 480, 35), waveLine, rewardStyle);
         float ready = tongue.Readiness;
         GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
             ready >= 1f ? "Tongue ready • click" : tongue.IsOut ? "Catch it!" : "Getting ready...", rewardStyle);
@@ -685,7 +648,7 @@ public sealed class BugGame : MonoBehaviour
         if (Time.time < celebrationUntil)
         {
             float x = Screen.width * 0.5f - 220f;
-            float y = Screen.height - 145f;
+            float y = Screen.height - 270f;
             GUI.Box(new Rect(x, y, 440, 110), "");
             GUI.Label(new Rect(x + 10, y + 12, 420, 45), "Master Lizard!", titleStyle);
             GUI.Label(new Rect(x + 10, y + 58, 420, 35), "All upgrades maxed. Keep catching bugs!", rewardStyle);
@@ -718,7 +681,8 @@ public sealed class BugGame : MonoBehaviour
         combo = 0;
         lastCatchTime = float.NegativeInfinity;
         bool changedArea = backyard.SetArea(area);
-        if (changedArea || gameOver)
+        bool newRun = changedArea || gameOver || waves.Wave == 0;
+        if (newRun)
         {
             berry.SetActive(false);
             Camera view = Camera.main;
@@ -728,13 +692,12 @@ public sealed class BugGame : MonoBehaviour
             MoveFly();
             RespawnAnt();
             RespawnBeetle();
-            redAnt.transform.position = NewBugSpot();
-            otherRedAnt.transform.position = NewBugSpot();
+            waves.Restart(area);
+            hearts = 3;
+            nextBerryTime = 0f;
         }
         if (gameOver)
         {
-            hearts = 3;
-            nextBerryTime = 0f;
             hurtUntil = 0f;
             caughtThisFlick = false;
             heardThisFlick = false;
@@ -911,10 +874,7 @@ public sealed class BugGame : MonoBehaviour
         if (berry != null) Destroy(berry);
         if (berrySprite != null) Destroy(berrySprite);
         if (berryPixels != null) Destroy(berryPixels);
-        if (redAnt != null) Destroy(redAnt);
-        if (otherRedAnt != null) Destroy(otherRedAnt);
-        if (redAntSprite != null) Destroy(redAntSprite);
-        if (redAntPixels != null) Destroy(redAntPixels);
+        if (waves != null) Destroy(waves);
         if (fly != null) Destroy(fly);
         if (flySprite != null) Destroy(flySprite);
         if (flyPixels != null) Destroy(flyPixels);
