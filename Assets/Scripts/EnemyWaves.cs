@@ -16,12 +16,17 @@ public sealed class EnemyWaves : MonoBehaviour
     private readonly List<Hunter> hunters = new List<Hunter>();
     private readonly Sprite[] sprites = new Sprite[3];
     private readonly Texture2D[] pixels = new Texture2D[3];
+    private readonly Sprite[] bossSprites = new Sprite[3];
+    private readonly Texture2D[] bossPixels = new Texture2D[3];
     private BackyardMap backyard;
+    private Hunter boss;
     private YardArea area;
     private int toSpawn;
     private float nextSpawn;
     private float nextWave;
     private bool resting;
+    private float nextSummon;
+    private float bossFlashUntil;
 
     public int Wave { get; private set; }
     public int Remaining => toSpawn + hunters.Count;
@@ -29,6 +34,19 @@ public sealed class EnemyWaves : MonoBehaviour
     public string EnemyName => area == YardArea.Backyard ? "Red ants"
         : area == YardArea.FlowerPatch ? "Wasps" : "Pond beetles";
     public float BreakLeft => resting ? Mathf.Max(0f, nextWave - Time.time) : 0f;
+    public bool IsBossWave => Wave > 0 && Wave % 5 == 0;
+    public bool BossAlive => boss != null;
+    public bool UpgradeBreak { get; private set; }
+    public int BossHealth { get; private set; }
+    public int BossMaxHealth { get; private set; }
+    public string HitNotice { get; private set; }
+    public string BossName => area == YardArea.Backyard ? "Queen ant"
+        : area == YardArea.FlowerPatch ? "Giant hornet" : "Armored beetle";
+    private bool ShellOpen => boss != null && Time.time >= boss.attackAt + 1.8f
+        && Time.time < boss.attackAt + 3.4f;
+    public string BossHint => area == YardArea.Backyard ? "Catch the queen. Watch for her ants!"
+        : area == YardArea.FlowerPatch ? "Dodge the warning, then strike!"
+        : ShellOpen ? "Shell open! Hit it now!" : "Dodge its charge to expose its shell";
 
     private void Awake()
     {
@@ -37,10 +55,26 @@ public sealed class EnemyWaves : MonoBehaviour
         {
             pixels[i] = DrawHunter((YardArea)i);
             sprites[i] = Sprite.Create(pixels[i], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+            bossPixels[i] = DrawHunter((YardArea)i);
+            // a gold crest makes the bigger bug easy to pick out.
+            for (int y = 16; y <= 21; y++)
+            for (int x = 16; x <= 21; x++)
+                if (y <= 18 || x == 16 || x == 18 || x == 21)
+                    bossPixels[i].SetPixel(x, y, new Color(1f, 0.80f, 0.15f));
+            bossPixels[i].Apply();
+            bossSprites[i] = Sprite.Create(bossPixels[i], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
         }
     }
 
     public void Restart(YardArea nextArea)
+    {
+        ClearHunters();
+        area = nextArea;
+        Wave = 1;
+        BeginWave();
+    }
+
+    private void ClearHunters()
     {
         foreach (Hunter bug in hunters)
         {
@@ -48,20 +82,29 @@ public sealed class EnemyWaves : MonoBehaviour
             Destroy(bug.picture.gameObject);
         }
         hunters.Clear();
-        area = nextArea;
-        Wave = 1;
-        BeginWave();
+        boss = null;
     }
 
     private void BeginWave()
     {
         resting = false;
-        toSpawn = 3 + (Wave - 1) * 2 + (int)area * 2;
+        UpgradeBreak = false;
+        BossHealth = BossMaxHealth = 0;
+        HitNotice = "";
+        toSpawn = IsBossWave ? 1 : 3 + (Wave - 1) * 2 + (int)area * 2;
         nextSpawn = Time.time + 1.5f;
+    }
+
+    public void ContinueAfterBoss()
+    {
+        if (!UpgradeBreak) return;
+        Wave++;
+        BeginWave();
     }
 
     public void Tick()
     {
+        if (UpgradeBreak) return;
         if (resting)
         {
             if (Time.time < nextWave) return;
@@ -72,23 +115,59 @@ public sealed class EnemyWaves : MonoBehaviour
         int crowd = Mathf.Min(8, 2 + (Wave - 1) / 2 + (int)area);
         if (toSpawn > 0 && hunters.Count < crowd && Time.time >= nextSpawn)
         {
-            if (FindSpawn(out Vector2 spot))
+            if (FindSpawn(out Vector2 spot, IsBossWave ? 0.65f : 0.35f))
             {
-                GameObject body = new GameObject(EnemyName);
-                SpriteRenderer picture = body.AddComponent<SpriteRenderer>();
-                picture.sprite = sprites[(int)area];
-                picture.sortingOrder = 2;
-                body.transform.position = spot;
-                hunters.Add(new Hunter { picture = picture, attackAt = Time.time + Random.Range(1f, 2f),
-                    wobble = Random.Range(0f, 6f) });
+                Hunter bug = SpawnHunter(spot, IsBossWave);
+                if (IsBossWave)
+                {
+                    boss = bug;
+                    BossHealth = BossMaxHealth = 5 + (Wave / 5 - 1) * 2 + (int)area;
+                    nextSummon = Time.time + 3f;
+                }
                 toSpawn--;
             }
             nextSpawn = Time.time + Mathf.Max(0.6f, 1.5f - Wave * 0.08f);
         }
-        foreach (Hunter bug in hunters) MoveHunter(bug);
+        if (boss != null && area == YardArea.Backyard && Time.time >= nextSummon)
+        {
+            SummonAnts();
+            nextSummon = Time.time + 4.5f;
+        }
+        foreach (Hunter bug in hunters)
+            if (bug == boss) MoveBoss();
+            else MoveHunter(bug);
     }
 
-    private bool FindSpawn(out Vector2 spot)
+    private Hunter SpawnHunter(Vector2 spot, bool big)
+    {
+        GameObject body = new GameObject(big ? BossName : EnemyName);
+        SpriteRenderer picture = body.AddComponent<SpriteRenderer>();
+        picture.sprite = big ? bossSprites[(int)area] : sprites[(int)area];
+        picture.sortingOrder = big ? 3 : 2;
+        body.transform.position = spot;
+        body.transform.localScale = Vector3.one * (big ? 1.8f : 1f);
+        Hunter bug = new Hunter { picture = picture, attackAt = Time.time + Random.Range(1f, 2f),
+            wobble = Random.Range(0f, 6f) };
+        hunters.Add(bug);
+        return bug;
+    }
+
+    private void SummonAnts()
+    {
+        for (int attempt = 0, added = 0; attempt < 30 && added < 2 && hunters.Count < 5; attempt++)
+        {
+            Vector2 spot = (Vector2)boss.picture.transform.position + Random.insideUnitCircle.normalized * 1.4f;
+            if (backyard.IsBlocked(spot, 0.35f) || Vector2.Distance(spot, transform.position) < 1.8f) continue;
+            bool crowded = false;
+            foreach (Hunter bug in hunters)
+                if (Vector2.Distance(spot, bug.picture.transform.position) < 0.8f) crowded = true;
+            if (crowded) continue;
+            SpawnHunter(spot, false);
+            added++;
+        }
+    }
+
+    private bool FindSpawn(out Vector2 spot, float space)
     {
         Camera view = Camera.main;
         Vector2 center = view != null ? (Vector2)view.transform.position : Vector2.zero;
@@ -97,7 +176,8 @@ public sealed class EnemyWaves : MonoBehaviour
         for (int attempt = 0; attempt < 60; attempt++)
         {
             spot = center + new Vector2(Random.Range(-wide, wide), Random.Range(-tall, tall));
-            if ((spot - (Vector2)transform.position).sqrMagnitude < 6.25f || backyard.IsBlocked(spot, 0.35f)) continue;
+            float safeDistance = IsBossWave ? 9f : 6.25f;
+            if ((spot - (Vector2)transform.position).sqrMagnitude < safeDistance || backyard.IsBlocked(spot, space)) continue;
             bool crowded = false;
             foreach (Hunter bug in hunters)
                 if (((Vector2)bug.picture.transform.position - spot).sqrMagnitude < 0.8f) crowded = true;
@@ -138,13 +218,53 @@ public sealed class EnemyWaves : MonoBehaviour
             }
             else bug.attackAt = Time.time + (area == YardArea.FlowerPatch ? 1.8f : 2.4f);
         }
+        StepHunter(bug, chase, speed, charging, 0.25f);
+    }
+
+    private void MoveBoss()
+    {
+        Vector2 chase = ((Vector2)transform.position - (Vector2)boss.picture.transform.position).normalized;
+        float extra = Mathf.Min((Wave / 5 - 1) * 0.1f, 0.6f);
+        float speed = (area == YardArea.Backyard ? 0.8f : 1.2f) + extra;
+        bool charging = false;
+        boss.picture.color = Time.time < bossFlashUntil ? new Color(1f, 0.5f, 0.5f) : Color.white;
+        if (area != YardArea.Backyard && Time.time >= boss.attackAt)
+        {
+            float windup = area == YardArea.FlowerPatch ? 0.8f : 1f;
+            float dash = area == YardArea.FlowerPatch ? 0.55f : 0.8f;
+            float recovery = area == YardArea.FlowerPatch ? 0.8f : 1.6f;
+            if (Time.time < boss.attackAt + windup)
+            {
+                boss.charge = chase;
+                boss.picture.color = new Color(1f, 0.4f, 0.25f);
+                return;
+            }
+            else if (Time.time < boss.attackAt + windup + dash)
+            {
+                chase = boss.charge;
+                speed = 5f + extra;
+                charging = true;
+            }
+            else if (Time.time < boss.attackAt + windup + dash + recovery)
+            {
+                boss.picture.color = new Color(0.65f, 1f, 0.55f);
+                return;
+            }
+            else boss.attackAt = Time.time + 1.6f;
+        }
+        StepHunter(boss, chase, speed, charging, 0.55f);
+    }
+
+    private void StepHunter(Hunter bug, Vector2 chase, float speed, bool charging, float space)
+    {
+        Vector2 here = bug.picture.transform.position;
         // charges keep their direction; walking bugs can step around rocks.
         for (int turn = 0; turn < (charging ? 1 : 7); turn++)
         {
             float angle = ((turn + 1) / 2) * (turn % 2 == 0 ? -1f : 1f) * Mathf.PI * 0.25f;
             Vector2 step = new Vector2(chase.x * Mathf.Cos(angle) - chase.y * Mathf.Sin(angle),
                 chase.x * Mathf.Sin(angle) + chase.y * Mathf.Cos(angle)) * (speed * Mathf.Min(Time.deltaTime, 0.05f));
-            if (backyard.IsBlocked(here + step, 0.25f)) continue;
+            if (backyard.IsBlocked(here + step, space)) continue;
             bug.picture.transform.position = here + step;
             break;
         }
@@ -156,7 +276,9 @@ public sealed class EnemyWaves : MonoBehaviour
         foreach (Hunter bug in hunters)
         {
             Vector2 away = (Vector2)bug.picture.transform.position - (Vector2)transform.position;
-            if (Time.time < bug.stunnedUntil || away.sqrMagnitude > 0.49f) continue;
+            if (Time.time < bug.stunnedUntil || away.sqrMagnitude > (bug == boss ? 0.81f : 0.49f)) continue;
+            // a bite shouldn't cancel a boss's warning or open-shell window.
+            if (bug == boss) return true;
             Vector2 back = (Vector2)bug.picture.transform.position + (away == Vector2.zero ? Vector2.up : away.normalized) * 0.9f;
             if (!backyard.IsBlocked(back, 0.25f)) bug.picture.transform.position = back;
             bug.stunnedUntil = Time.time + 0.7f;
@@ -166,16 +288,37 @@ public sealed class EnemyWaves : MonoBehaviour
         return false;
     }
 
-    public bool TryCatch(Vector2 start, Vector2 span, out Vector2 spot)
+    public bool TryCatch(Vector2 start, Vector2 span, out Vector2 spot, out int reward)
     {
         spot = Vector2.zero;
+        reward = 0;
         if (span.sqrMagnitude < 0.001f) return false;
         for (int i = 0; i < hunters.Count; i++)
         {
             Vector2 here = hunters[i].picture.transform.position;
             float along = Mathf.Clamp01(Vector2.Dot(here - start, span) / span.sqrMagnitude);
-            if ((here - (start + span * along)).sqrMagnitude > 0.12f) continue;
+            Hunter bug = hunters[i];
+            if ((here - (start + span * along)).sqrMagnitude > (bug == boss ? 0.36f : 0.12f)) continue;
             spot = here;
+            if (bug == boss)
+            {
+                if (area == YardArea.PondEdge && !ShellOpen)
+                {
+                    HitNotice = "Armor blocked it! Wait for its charge.";
+                    return true;
+                }
+                BossHealth--;
+                bossFlashUntil = Time.time + 0.2f;
+                HitNotice = $"{BossName}: {BossHealth}/{BossMaxHealth} health";
+                if (BossHealth > 0) return true;
+                reward = 15 + Wave * 2 + (int)area * 5;
+                HitNotice = $"{BossName} defeated! +{reward} coins";
+                ClearHunters();
+                toSpawn = 0;
+                UpgradeBreak = true;
+                return true;
+            }
+            reward = CoinReward;
             hunters[i].picture.gameObject.SetActive(false);
             Destroy(hunters[i].picture.gameObject);
             hunters.RemoveAt(i);
@@ -257,6 +400,8 @@ public sealed class EnemyWaves : MonoBehaviour
         {
             if (sprites[i] != null) Destroy(sprites[i]);
             if (pixels[i] != null) Destroy(pixels[i]);
+            if (bossSprites[i] != null) Destroy(bossSprites[i]);
+            if (bossPixels[i] != null) Destroy(bossPixels[i]);
         }
     }
 }

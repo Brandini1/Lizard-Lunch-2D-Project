@@ -330,15 +330,26 @@ public sealed class BugGame : MonoBehaviour
         bool caughtBeetle = !caughtFly && !caughtAnt && TongueTouches(beetle, start, span);
         bool caughtButterfly = !caughtFly && !caughtAnt && !caughtBeetle && TongueTouches(butterfly, start, span);
         Vector2 enemySpot = Vector2.zero;
+        int enemyCoins = 0;
         bool caughtEnemy = !caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly
-            && waves.TryCatch(start, span, out enemySpot);
+            && waves.TryCatch(start, span, out enemySpot, out enemyCoins);
         if (!caughtFly && !caughtAnt && !caughtBeetle && !caughtButterfly && !caughtEnemy) { CheckBite(); return; }
+        if (caughtEnemy && enemyCoins == 0)
+        {
+            // one tongue flick gets one boss hit, even when it stays extended.
+            caughtThisFlick = true;
+            sounds.PlayOneShot(catchSound, 0.5f);
+            shopNotice = waves.HitNotice;
+            noticeUntil = Time.time + 1.5f;
+            CheckBite();
+            return;
+        }
 
         GameObject caught = caughtFly ? fly : caughtAnt ? ant : caughtBeetle ? beetle : butterfly;
         rewardSpot = caughtEnemy ? enemySpot : (Vector2)caught.transform.position;
         combo = Time.time - lastCatchTime <= ComboSeconds ? combo + 1 : 1;
         lastCatchTime = Time.time;
-        rewardAmount = (caughtEnemy ? waves.CoinReward : caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1)
+        rewardAmount = (caughtEnemy ? enemyCoins : caughtButterfly ? 4 : caughtBeetle ? 3 : caughtAnt ? 2 : 1)
             + (combo >= 3 ? 1 : 0);
         rewardStarted = Time.time;
         score++;
@@ -346,6 +357,11 @@ public sealed class BugGame : MonoBehaviour
         SaveProgress();
         sounds.PlayOneShot(catchSound);
         caughtThisFlick = true;
+        if (waves.UpgradeBreak)
+        {
+            upgradesOpen = true;
+            sounds.PlayOneShot(upgradeSound);
+        }
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
         else if (caughtBeetle) RespawnBeetle();
@@ -600,15 +616,30 @@ public sealed class BugGame : MonoBehaviour
         else if (hearts < 3)
             GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
-        string waveLine = waves.BreakLeft > 0f
+        string waveLine = waves.UpgradeBreak ? "Boss beaten! Spend your bonus coins."
+            : waves.BossAlive ? $"Wave {waves.Wave} • {waves.BossName}: {waves.BossHealth}/{waves.BossMaxHealth}"
+            : waves.BreakLeft > 0f
             ? $"Wave {waves.Wave} cleared! Next in {Mathf.CeilToInt(waves.BreakLeft)}s"
+            : waves.IsBossWave ? $"Wave {waves.Wave} • {waves.BossName} incoming!"
             : $"Wave {waves.Wave} • {waves.EnemyName}: {waves.Remaining} left";
         GUI.Label(new Rect(Screen.width * 0.5f - 240, Screen.height - 155, 480, 35), waveLine, rewardStyle);
+        if (waves.BossAlive)
+        {
+            GUI.Label(new Rect(Screen.width * 0.5f - 280, Screen.height - 220, 560, 35), waves.BossHint, rewardStyle);
+            DrawMeter(new Rect(Screen.width * 0.5f - 160, Screen.height - 175, 320, 10),
+                waves.BossHealth / (float)waves.BossMaxHealth, new Color(0.95f, 0.23f, 0.12f));
+        }
+        if (waves.UpgradeBreak && GUI.Button(new Rect(Screen.width * 0.5f - 110, Screen.height - 108, 220, 44),
+            "Next wave", playStyle))
+        {
+            waves.ContinueAfterBoss();
+            upgradesOpen = false;
+        }
         float ready = tongue.Readiness;
         GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
             ready >= 1f ? "Tongue ready • click" : tongue.IsOut ? "Catch it!" : "Getting ready...", rewardStyle);
         DrawMeter(new Rect(24, Screen.height - 30, 280, 10), ready, new Color(1f, 0.49f, 0.65f));
-        if (Time.time < noticeUntil)
+        if (Time.time < noticeUntil && !waves.UpgradeBreak)
             GUI.Label(new Rect(Screen.width * 0.5f - 180, Screen.height - 108, 360, 35), shopNotice, rewardStyle);
         float comboLeft = ComboSeconds - (Time.time - lastCatchTime);
         if (combo >= 2 && comboLeft > 0f)
