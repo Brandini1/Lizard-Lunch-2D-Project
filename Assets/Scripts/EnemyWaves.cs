@@ -196,6 +196,11 @@ public sealed class EnemyWaves : MonoBehaviour
         for (int y = 0; y < 24; y++)
         for (int x = 0; x < 24; x++)
         {
+            if (yard == YardArea.Backyard)
+            {
+                colors[y * 24 + x] = AntPixel(x, y);
+                continue;
+            }
             float belly = Mathf.Pow((x - 9f) / (yard == YardArea.PondEdge ? 8f : 6f), 2)
                 + Mathf.Pow((y - 12f) / (yard == YardArea.PondEdge ? 6f : 4f), 2);
             bool head = new Vector2(x - 18, y - 12).sqrMagnitude < 13f;
@@ -215,6 +220,33 @@ public sealed class EnemyWaves : MonoBehaviour
         dots.SetPixels(colors);
         dots.Apply();
         return dots;
+    }
+
+    private static Color AntPixel(int x, int y)
+    {
+        // separate the abdomen, waist, and head instead of drawing one shell.
+        float back = Mathf.Pow((x - 5f) / 4f, 2) + Mathf.Pow((y - 12f) / 3f, 2);
+        float middle = Mathf.Pow((x - 12f) / 2.2f, 2) + Mathf.Pow((y - 12f) / 2f, 2);
+        float head = Mathf.Pow((x - 19f) / 3f, 2) + Mathf.Pow((y - 12f) / 3f, 2);
+        int legY = y < 12 ? y : 24 - y;
+        bool legs = AntLine(x, legY, 10, 11, 8, 8) || AntLine(x, legY, 8, 8, 4, 6)
+            || AntLine(x, legY, 12, 11, 12, 7) || AntLine(x, legY, 12, 7, 10, 3)
+            || AntLine(x, legY, 14, 11, 17, 8) || AntLine(x, legY, 17, 8, 20, 5);
+        bool feelers = AntLine(x, legY, 21, 10, 22, 7) || AntLine(x, legY, 22, 7, 23, 6);
+        float body = Mathf.Min(back, Mathf.Min(middle, head));
+        if (head < 1f && x == 20 && (y == 11 || y == 13)) return new Color(1f, 0.88f, 0.65f);
+        if (body < 1f) return body > 0.6f ? new Color(0.45f, 0.08f, 0.05f)
+            : new Color(0.95f, 0.23f, 0.12f);
+        bool waist = y == 12 && x >= 8 && x <= 16;
+        return legs || feelers || waist ? new Color(0.48f, 0.12f, 0.07f) : Color.clear;
+    }
+
+    private static bool AntLine(int x, int y, float ax, float ay, float bx, float by)
+    {
+        Vector2 offset = new Vector2(x - ax, y - ay);
+        Vector2 line = new Vector2(bx - ax, by - ay);
+        float along = Mathf.Clamp01(Vector2.Dot(offset, line) / line.sqrMagnitude);
+        return (offset - line * along).sqrMagnitude < 0.45f;
     }
 
     private void OnDestroy()
