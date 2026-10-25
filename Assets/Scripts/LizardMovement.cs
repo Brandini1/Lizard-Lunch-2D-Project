@@ -5,6 +5,9 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(Rigidbody2D), typeof(SpriteRenderer))]
 public sealed class LizardMovement : MonoBehaviour
 {
+    private const float DashSeconds = 0.18f;
+    private const float DashCooldown = 3f;
+    private const float DashSpeed = 11f;
     // the vertical frames drift sideways, so each pose gets its own pivot.
     private static readonly float[] DownPivotsX = { 406.5f / 724f, 362f / 724f, 298.5f / 724f };
     private static readonly float[] UpPivotsX = { 422f / 724f, 369.5f / 724f, 293.5f / 724f };
@@ -19,6 +22,31 @@ public sealed class LizardMovement : MonoBehaviour
     private Vector2 travelInput;
     private int facing; // down, up, left, right.
     private float stepTime;
+    private Vector2 dashDirection;
+    private float dashUntil;
+    private float dashReadyAt;
+
+    public bool IsDashing => enabled && Time.time < dashUntil;
+    public float DashReadiness => IsDashing ? 0f : Mathf.Clamp01(1f - (dashReadyAt - Time.time) / DashCooldown);
+
+    public bool TryDash()
+    {
+        if (Time.timeScale == 0f || !enabled || IsDashing || Time.time < dashReadyAt) return false;
+        Vector2 input = ReadTravel(Keyboard.current);
+        dashDirection = input == Vector2.zero ? FacingDirection : input.normalized;
+        dashUntil = Time.time + DashSeconds;
+        dashReadyAt = Time.time + DashCooldown;
+        FaceDirection(dashDirection);
+        return true;
+    }
+
+    public void ResetDash()
+    {
+        dashUntil = dashReadyAt = 0f;
+        travelInput = Vector2.zero;
+        if (lizardSprite != null) lizardSprite.color = Color.white;
+        if (lizardBody != null) lizardBody.linearVelocity = Vector2.zero;
+    }
 
     public float MoveSpeed
     {
@@ -70,19 +98,8 @@ public sealed class LizardMovement : MonoBehaviour
             return;
         }
 
-        Keyboard keys = Keyboard.current;
-        if (keys == null)
-        {
-            travelInput = Vector2.zero;
-            return;
-        }
-
-        float horizontal = (keys.dKey.isPressed || keys.rightArrowKey.isPressed ? 1f : 0f)
-                         - (keys.aKey.isPressed || keys.leftArrowKey.isPressed ? 1f : 0f);
-        float vertical = (keys.wKey.isPressed || keys.upArrowKey.isPressed ? 1f : 0f)
-                       - (keys.sKey.isPressed || keys.downArrowKey.isPressed ? 1f : 0f);
-
-        travelInput = Vector2.ClampMagnitude(new Vector2(horizontal, vertical), 1f);
+        travelInput = IsDashing ? dashDirection : ReadTravel(Keyboard.current);
+        lizardSprite.color = IsDashing ? new Color(0.6f, 1f, 1f) : Color.white;
         if (travelInput == Vector2.zero)
         {
             stepTime = 0f;
@@ -90,31 +107,36 @@ public sealed class LizardMovement : MonoBehaviour
             return;
         }
 
-        int nextFacing = Mathf.Abs(horizontal) > Mathf.Abs(vertical)
-            ? (horizontal < 0f ? 2 : 3)
-            : (vertical < 0f ? 0 : 1);
+        int nextFacing = Mathf.Abs(travelInput.x) > Mathf.Abs(travelInput.y)
+            ? (travelInput.x < 0f ? 2 : 3)
+            : (travelInput.y < 0f ? 0 : 1);
         if (nextFacing != facing)
         {
             facing = nextFacing;
             stepTime = 0f;
         }
 
-        stepTime += Time.deltaTime;
+        stepTime += Time.deltaTime * (IsDashing ? 2f : 1f);
         int step = Mathf.FloorToInt(stepTime * walkFramesPerSecond) % 4;
         ShowFrame(step == 1 ? 0 : step == 3 ? 2 : 1);
     }
 
     private void FixedUpdate()
     {
-        lizardBody.linearVelocity = travelInput * moveSpeed;
+        lizardBody.linearVelocity = IsDashing ? dashDirection * DashSpeed : travelInput * moveSpeed;
     }
 
-    private void OnDisable()
+    private static Vector2 ReadTravel(Keyboard keys)
     {
-        travelInput = Vector2.zero;
-        if (lizardBody != null)
-            lizardBody.linearVelocity = Vector2.zero;
+        if (keys == null) return Vector2.zero;
+        float x = (keys.dKey.isPressed || keys.rightArrowKey.isPressed ? 1f : 0f)
+                - (keys.aKey.isPressed || keys.leftArrowKey.isPressed ? 1f : 0f);
+        float y = (keys.wKey.isPressed || keys.upArrowKey.isPressed ? 1f : 0f)
+                - (keys.sKey.isPressed || keys.downArrowKey.isPressed ? 1f : 0f);
+        return Vector2.ClampMagnitude(new Vector2(x, y), 1f);
     }
+
+    private void OnDisable() => ResetDash();
 
     private void OnDestroy()
     {

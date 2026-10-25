@@ -148,6 +148,7 @@ public sealed class BugGame : MonoBehaviour
 
         if (keys != null)
         {
+            if (keys.spaceKey.wasPressedThisFrame) lizard.TryDash();
             if (keys.eKey.wasPressedThisFrame) upgradesOpen = !upgradesOpen;
             if (upgradesOpen)
             {
@@ -286,7 +287,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void CheckBite()
     {
-        if (Time.time < safeUntil || !waves.TryBite()) return;
+        if (lizard.IsDashing || Time.time < safeUntil || !waves.TryBite()) return;
         hearts--;
         sounds.PlayOneShot(biteSound);
         hurtUntil = Time.time + 0.2f;
@@ -300,6 +301,7 @@ public sealed class BugGame : MonoBehaviour
         gameOver = true;
         upgradesOpen = false;
         tongue.enabled = false;
+        lizard.ResetDash();
         GetComponent<Rigidbody2D>().linearVelocity = Vector2.zero;
         Time.timeScale = 0f;
     }
@@ -571,7 +573,7 @@ public sealed class BugGame : MonoBehaviour
             GUI.Label(new Rect(x + 20, y + 18, 380, 55), "Lizard Lunch", titleStyle);
             GUI.Label(new Rect(x + 82, y + 76, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
             GUI.Label(new Rect(x + 82, y + 105, 300, 25), "Move: WASD / arrows    Tongue: click");
-            GUI.Label(new Rect(x + 82, y + 134, 300, 25), "E: upgrades    Esc: pause");
+            GUI.Label(new Rect(x + 62, y + 134, 340, 25), "Space: dash    E: upgrades    Esc: pause");
             if (GUI.Button(new Rect(x + 50, y + 172, 320, 44), "Play Backyard", playStyle)) StartGame(YardArea.Backyard);
             GUI.enabled = score >= FlowerPatchUnlock;
             if (GUI.Button(new Rect(x + 50, y + 224, 320, 44), "Play Flower Patch", playStyle)) StartGame(YardArea.FlowerPatch);
@@ -639,6 +641,11 @@ public sealed class BugGame : MonoBehaviour
         GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
             ready >= 1f ? "Tongue ready • click" : tongue.IsOut ? "Catch it!" : "Getting ready...", rewardStyle);
         DrawMeter(new Rect(24, Screen.height - 30, 280, 10), ready, new Color(1f, 0.49f, 0.65f));
+        float dashReady = lizard.DashReadiness;
+        GUI.Label(new Rect(Screen.width - 300, Screen.height - 68, 280, 30),
+            lizard.IsDashing ? "Dodging!" : dashReady >= 1f ? "Dash ready • Space" : "Dash recharging...", rewardStyle);
+        DrawMeter(new Rect(Screen.width - 304, Screen.height - 30, 280, 10), dashReady,
+            new Color(0.4f, 0.95f, 1f));
         if (Time.time < noticeUntil && !waves.UpgradeBreak)
             GUI.Label(new Rect(Screen.width * 0.5f - 180, Screen.height - 108, 360, 35), shopNotice, rewardStyle);
         float comboLeft = ComboSeconds - (Time.time - lastCatchTime);
@@ -715,6 +722,7 @@ public sealed class BugGame : MonoBehaviour
         bool newRun = changedArea || gameOver || waves.Wave == 0;
         if (newRun)
         {
+            lizard.ResetDash();
             berry.SetActive(false);
             Camera view = Camera.main;
             Rigidbody2D body = GetComponent<Rigidbody2D>();
