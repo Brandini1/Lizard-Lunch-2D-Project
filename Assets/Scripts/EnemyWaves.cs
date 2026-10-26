@@ -11,6 +11,8 @@ public sealed class EnemyWaves : MonoBehaviour
         public float attackAt;
         public float stunnedUntil;
         public float wobble;
+        public LineRenderer warning;
+        public bool aimLocked;
     }
 
     private readonly List<Hunter> hunters = new List<Hunter>();
@@ -27,6 +29,8 @@ public sealed class EnemyWaves : MonoBehaviour
     private bool resting;
     private float nextSummon;
     private float bossFlashUntil;
+    private float bossIntroUntil;
+    private Material warningPaint;
 
     public int Wave { get; private set; }
     public int Remaining => toSpawn + hunters.Count;
@@ -36,6 +40,7 @@ public sealed class EnemyWaves : MonoBehaviour
     public float BreakLeft => resting ? Mathf.Max(0f, nextWave - Time.time) : 0f;
     public bool IsBossWave => Wave > 0 && Wave % 5 == 0;
     public bool BossAlive => boss != null;
+    public float BossIntroLeft => IsBossWave && !UpgradeBreak ? Mathf.Max(0f, bossIntroUntil - Time.time) : 0f;
     public bool UpgradeBreak { get; private set; }
     public int BossHealth { get; private set; }
     public int BossMaxHealth { get; private set; }
@@ -51,6 +56,7 @@ public sealed class EnemyWaves : MonoBehaviour
     private void Awake()
     {
         backyard = GetComponent<BackyardMap>();
+        warningPaint = new Material(Shader.Find("Sprites/Default"));
         for (int i = 0; i < sprites.Length; i++)
         {
             pixels[i] = DrawHunter((YardArea)i);
@@ -93,6 +99,7 @@ public sealed class EnemyWaves : MonoBehaviour
         HitNotice = "";
         toSpawn = IsBossWave ? 1 : 3 + (Wave - 1) * 2 + (int)area * 2;
         nextSpawn = Time.time + 1.5f;
+        bossIntroUntil = IsBossWave ? Time.time + 3f : 0f;
     }
 
     public void ContinueAfterBoss()
@@ -189,6 +196,7 @@ public sealed class EnemyWaves : MonoBehaviour
 
     private void MoveHunter(Hunter bug)
     {
+        if (bug.warning != null) bug.warning.enabled = false;
         if (Time.time < bug.stunnedUntil) return;
         Vector2 here = bug.picture.transform.position;
         Vector2 chase = ((Vector2)transform.position - here).normalized;
@@ -201,12 +209,13 @@ public sealed class EnemyWaves : MonoBehaviour
             float dash = area == YardArea.FlowerPatch ? 0.4f : 0.65f;
             if (Time.time < bug.attackAt)
             {
+                bug.aimLocked = false;
                 if (area == YardArea.FlowerPatch)
                     chase = (chase + new Vector2(-chase.y, chase.x) * Mathf.Sin(Time.time * 5f + bug.wobble) * 0.7f).normalized;
             }
             else if (Time.time < bug.attackAt + windup)
             {
-                bug.charge = chase;
+                WarnCharge(bug, chase, speed * (area == YardArea.FlowerPatch ? 2.1f : 2.6f) * dash, 0.25f);
                 bug.picture.color = new Color(1f, 0.65f, 0.65f);
                 return;
             }
@@ -216,13 +225,19 @@ public sealed class EnemyWaves : MonoBehaviour
                 speed *= area == YardArea.FlowerPatch ? 2.1f : 2.6f;
                 charging = true;
             }
-            else bug.attackAt = Time.time + (area == YardArea.FlowerPatch ? 1.8f : 2.4f);
+            else
+            {
+                bug.attackAt = Time.time + (area == YardArea.FlowerPatch ? 1.8f : 2.4f);
+                bug.aimLocked = false;
+            }
         }
         StepHunter(bug, chase, speed, charging, 0.25f);
     }
 
     private void MoveBoss()
     {
+        if (boss.warning != null) boss.warning.enabled = false;
+        if (Time.time < boss.attackAt) boss.aimLocked = false;
         Vector2 chase = ((Vector2)transform.position - (Vector2)boss.picture.transform.position).normalized;
         float extra = Mathf.Min((Wave / 5 - 1) * 0.1f, 0.6f);
         float speed = (area == YardArea.Backyard ? 0.8f : 1.2f) + extra;
@@ -235,7 +250,7 @@ public sealed class EnemyWaves : MonoBehaviour
             float recovery = area == YardArea.FlowerPatch ? 0.8f : 1.6f;
             if (Time.time < boss.attackAt + windup)
             {
-                boss.charge = chase;
+                WarnCharge(boss, chase, (5f + extra) * dash, 0.55f);
                 boss.picture.color = new Color(1f, 0.4f, 0.25f);
                 return;
             }
@@ -250,7 +265,11 @@ public sealed class EnemyWaves : MonoBehaviour
                 boss.picture.color = new Color(0.65f, 1f, 0.55f);
                 return;
             }
-            else boss.attackAt = Time.time + 1.6f;
+            else
+            {
+                boss.attackAt = Time.time + 1.6f;
+                boss.aimLocked = false;
+            }
         }
         StepHunter(boss, chase, speed, charging, 0.55f);
     }
@@ -271,6 +290,42 @@ public sealed class EnemyWaves : MonoBehaviour
         bug.picture.flipX = chase.x < 0f;
     }
 
+    private void WarnCharge(Hunter bug, Vector2 chase, float distance, float space)
+    {
+        // commit to the shown direction so a well-timed dodge works.
+        if (!bug.aimLocked)
+        {
+            bug.charge = chase == Vector2.zero ? Vector2.right : chase;
+            bug.aimLocked = true;
+        }
+        if (bug.warning == null)
+        {
+            GameObject lane = new GameObject("Charge warning");
+            lane.transform.SetParent(bug.picture.transform, false);
+            bug.warning = lane.AddComponent<LineRenderer>();
+            bug.warning.sharedMaterial = warningPaint;
+            bug.warning.useWorldSpace = true;
+            bug.warning.positionCount = 2;
+            bug.warning.sortingOrder = 0;
+            bug.warning.startWidth = space * 2f;
+            bug.warning.endWidth = 0.08f;
+        }
+        Vector2 here = bug.picture.transform.position;
+        float clear = distance;
+        for (float step = 0.1f; step <= distance; step += 0.1f)
+            if (backyard.IsBlocked(here + bug.charge * step, space))
+            {
+                clear = Mathf.Max(0f, step - 0.1f);
+                break;
+            }
+        Color glow = new Color(1f, 0.25f, 0.1f, 0.4f + Mathf.Sin(Time.time * 18f) * 0.15f);
+        bug.warning.startColor = bug.warning.endColor = glow;
+        bug.warning.SetPosition(0, here);
+        bug.warning.SetPosition(1, here + bug.charge * clear);
+        bug.picture.flipX = bug.charge.x < 0f;
+        bug.warning.enabled = true;
+    }
+
     public bool TryBite()
     {
         foreach (Hunter bug in hunters)
@@ -283,6 +338,8 @@ public sealed class EnemyWaves : MonoBehaviour
             if (!backyard.IsBlocked(back, 0.25f)) bug.picture.transform.position = back;
             bug.stunnedUntil = Time.time + 0.7f;
             bug.attackAt = Time.time + 1.5f;
+            bug.aimLocked = false;
+            if (bug.warning != null) bug.warning.enabled = false;
             return true;
         }
         return false;
@@ -394,6 +451,7 @@ public sealed class EnemyWaves : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (warningPaint != null) Destroy(warningPaint);
         foreach (Hunter bug in hunters)
             if (bug.picture != null) Destroy(bug.picture.gameObject);
         for (int i = 0; i < sprites.Length; i++)

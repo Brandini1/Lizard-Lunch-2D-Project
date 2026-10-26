@@ -647,6 +647,17 @@ public sealed class BugGame : MonoBehaviour
         else if (hearts < 3)
             GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        if (waves.BossIntroLeft > 0f && !upgradesOpen)
+        {
+            float x = Screen.width * 0.5f - 220f;
+            float y = Screen.height * 0.28f;
+            Color oldColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, Mathf.Min(1f, waves.BossIntroLeft));
+            GUI.Box(new Rect(x, y, 440, 100), "");
+            GUI.Label(new Rect(x + 10, y + 8, 420, 45), $"Boss wave {waves.Wave}", titleStyle);
+            GUI.Label(new Rect(x + 10, y + 54, 420, 35), waves.BossName, rewardStyle);
+            GUI.color = oldColor;
+        }
         string waveLine = waves.UpgradeBreak ? "Boss beaten! Spend your bonus coins."
             : waves.BossAlive ? $"Wave {waves.Wave} • {waves.BossName}: {waves.BossHealth}/{waves.BossMaxHealth}"
             : waves.BreakLeft > 0f
