@@ -47,6 +47,11 @@ public sealed class BugGame : MonoBehaviour
     private GUIStyle rewardStyle;
     private int score;
     private int coins;
+    private int runBugs;
+    private int runCoins;
+    private int runBosses;
+    private int bestAtStart;
+    private readonly int[] bestWaves = new int[3];
     private int tongueLevel = 1;
     private int speedLevel = 1;
     private int cooldownLevel = 1;
@@ -131,7 +136,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void Update()
     {
-        if (gameOver) return;
+        if (gameOver && !titleOpen) return;
         Keyboard keys = Keyboard.current;
         if (titleOpen)
         {
@@ -162,6 +167,7 @@ public sealed class BugGame : MonoBehaviour
         MoveBeetle();
         MoveButterfly();
         waves.Tick();
+        RecordWave();
         UpdateBerry();
         if (fly == null || Time.time < restUntil) return;
 
@@ -356,11 +362,14 @@ public sealed class BugGame : MonoBehaviour
         rewardStarted = Time.time;
         score++;
         coins += rewardAmount;
+        runBugs++;
+        runCoins += rewardAmount;
         SaveProgress();
         sounds.PlayOneShot(catchSound);
         caughtThisFlick = true;
-        if (waves.UpgradeBreak)
+        if (caughtEnemy && waves.UpgradeBreak)
         {
+            runBosses++;
             upgradesOpen = true;
             sounds.PlayOneShot(upgradeSound);
         }
@@ -433,6 +442,8 @@ public sealed class BugGame : MonoBehaviour
 
     private void LoadProgress()
     {
+        for (int i = 0; i < bestWaves.Length; i++)
+            bestWaves[i] = Mathf.Max(0, PlayerPrefs.GetInt("LizardLunch.BestWave." + (YardArea)i));
         score = Mathf.Max(0, PlayerPrefs.GetInt("LizardLunch.BugsCaught"));
         coins = Mathf.Max(0, PlayerPrefs.GetInt("LizardLunch.Coins"));
         tongueLevel = Mathf.Clamp(PlayerPrefs.GetInt("LizardLunch.TongueLevel", 1), 1, MaxLevel);
@@ -453,6 +464,18 @@ public sealed class BugGame : MonoBehaviour
         PlayerPrefs.SetInt("LizardLunch.CooldownLevel", cooldownLevel);
         PlayerPrefs.Save();
     }
+
+    private void RecordWave()
+    {
+        int map = (int)currentArea;
+        if (waves.Wave <= bestWaves[map]) return;
+        bestWaves[map] = waves.Wave;
+        PlayerPrefs.SetInt("LizardLunch.BestWave." + currentArea, waves.Wave);
+        PlayerPrefs.Save();
+    }
+
+    private static string AreaName(YardArea area) => area == YardArea.Backyard ? "Backyard"
+        : area == YardArea.FlowerPatch ? "Flower Patch" : "Pond Edge";
 
     private void MoveFly()
     {
@@ -553,16 +576,22 @@ public sealed class BugGame : MonoBehaviour
             rewardStyle = new GUIStyle(scoreStyle) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
             rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
         }
-        if (gameOver)
+        if (gameOver && !titleOpen)
         {
-            float x = Screen.width * 0.5f - 210f;
-            float y = Screen.height * 0.5f - 130f;
-            GUI.Box(new Rect(x, y, 420, 260), "");
-            GUI.Label(new Rect(x + 20, y + 20, 380, 55), "Game over", titleStyle);
-            GUI.Label(new Rect(x + 20, y + 85, 380, 40), "Hearts: 0/3", rewardStyle);
-            GUI.Label(new Rect(x + 20, y + 125, 380, 35), $"You reached wave {waves.Wave}.", rewardStyle);
-            if (GUI.Button(new Rect(x + 70, y + 185, 280, 48), "Try again", playStyle))
+            float x = Screen.width * 0.5f - 230f;
+            float y = Screen.height * 0.5f - 205f;
+            GUI.Box(new Rect(x, y, 460, 410), "");
+            GUI.Label(new Rect(x + 20, y + 12, 420, 55), "Game over", titleStyle);
+            GUI.Label(new Rect(x + 20, y + 76, 420, 35), $"{AreaName(currentArea)} • Wave {waves.Wave}", rewardStyle);
+            GUI.Label(new Rect(x + 20, y + 112, 420, 35), "Hearts: 0/3", rewardStyle);
+            GUI.Label(new Rect(x + 20, y + 154, 420, 35), $"Bugs: {runBugs}    Coins earned: {runCoins}", rewardStyle);
+            GUI.Label(new Rect(x + 20, y + 190, 420, 35), $"Bosses beaten: {runBosses}", rewardStyle);
+            string record = waves.Wave > bestAtStart ? " • New best!" : "";
+            GUI.Label(new Rect(x + 20, y + 226, 420, 35), $"Best wave: {bestWaves[(int)currentArea]}{record}", rewardStyle);
+            if (GUI.Button(new Rect(x + 90, y + 286, 280, 44), "Try again", playStyle))
                 StartGame(currentArea);
+            if (GUI.Button(new Rect(x + 90, y + 342, 280, 44), "Main menu", playStyle))
+                titleOpen = true;
             return;
         }
         if (titleOpen)
@@ -574,11 +603,11 @@ public sealed class BugGame : MonoBehaviour
             GUI.Label(new Rect(x + 82, y + 76, 300, 25), $"Bugs caught: {score}    Coins: {coins}");
             GUI.Label(new Rect(x + 82, y + 105, 300, 25), "Move: WASD / arrows    Tongue: click");
             GUI.Label(new Rect(x + 62, y + 134, 340, 25), "Space: dash    E: upgrades    Esc: pause");
-            if (GUI.Button(new Rect(x + 50, y + 172, 320, 44), "Play Backyard", playStyle)) StartGame(YardArea.Backyard);
+            if (GUI.Button(new Rect(x + 50, y + 172, 320, 44), $"Backyard • Best wave {bestWaves[0]}", playStyle)) StartGame(YardArea.Backyard);
             GUI.enabled = score >= FlowerPatchUnlock;
-            if (GUI.Button(new Rect(x + 50, y + 224, 320, 44), "Play Flower Patch", playStyle)) StartGame(YardArea.FlowerPatch);
+            if (GUI.Button(new Rect(x + 50, y + 224, 320, 44), $"Flower Patch • Best wave {bestWaves[1]}", playStyle)) StartGame(YardArea.FlowerPatch);
             GUI.enabled = score >= PondEdgeUnlock;
-            if (GUI.Button(new Rect(x + 50, y + 276, 320, 44), "Play Pond Edge", playStyle)) StartGame(YardArea.PondEdge);
+            if (GUI.Button(new Rect(x + 50, y + 276, 320, 44), $"Pond Edge • Best wave {bestWaves[2]}", playStyle)) StartGame(YardArea.PondEdge);
             GUI.enabled = true;
             string areaHint = score < FlowerPatchUnlock
                 ? $"Flower patch: {score}/{FlowerPatchUnlock} bugs"
@@ -635,6 +664,7 @@ public sealed class BugGame : MonoBehaviour
             "Next wave", playStyle))
         {
             waves.ContinueAfterBoss();
+            RecordWave();
             upgradesOpen = false;
         }
         float ready = tongue.Readiness;
@@ -722,6 +752,8 @@ public sealed class BugGame : MonoBehaviour
         bool newRun = changedArea || gameOver || waves.Wave == 0;
         if (newRun)
         {
+            runBugs = runCoins = runBosses = 0;
+            bestAtStart = bestWaves[(int)area];
             lizard.ResetDash();
             berry.SetActive(false);
             Camera view = Camera.main;
@@ -744,6 +776,7 @@ public sealed class BugGame : MonoBehaviour
             gameOver = false;
         }
         currentArea = area;
+        RecordWave();
         safeUntil = Time.time + 1.5f;
         bool useFlowers = area == YardArea.FlowerPatch;
         if (useFlowers && butterfly == null)
