@@ -13,13 +13,14 @@ public sealed class EnemyWaves : MonoBehaviour
         public float wobble;
         public LineRenderer warning;
         public bool aimLocked;
+        public float stepTime;
     }
 
     private readonly List<Hunter> hunters = new List<Hunter>();
-    private readonly Sprite[] sprites = new Sprite[3];
-    private readonly Texture2D[] pixels = new Texture2D[3];
-    private readonly Sprite[] bossSprites = new Sprite[3];
-    private readonly Texture2D[] bossPixels = new Texture2D[3];
+    private readonly Sprite[,] sprites = new Sprite[3, 3];
+    private readonly Texture2D[,] pixels = new Texture2D[3, 3];
+    private readonly Sprite[,] bossSprites = new Sprite[3, 3];
+    private readonly Texture2D[,] bossPixels = new Texture2D[3, 3];
     private BackyardMap backyard;
     private Hunter boss;
     private YardArea area;
@@ -57,18 +58,20 @@ public sealed class EnemyWaves : MonoBehaviour
     {
         backyard = GetComponent<BackyardMap>();
         warningPaint = new Material(Shader.Find("Sprites/Default"));
-        for (int i = 0; i < sprites.Length; i++)
+        for (int i = 0; i < 3; i++)
+        for (int frame = 0; frame < 3; frame++)
         {
-            pixels[i] = DrawHunter((YardArea)i);
-            sprites[i] = Sprite.Create(pixels[i], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
-            bossPixels[i] = DrawHunter((YardArea)i);
+            int stride = frame == 1 ? -1 : frame == 2 ? 1 : 0;
+            pixels[i, frame] = DrawHunter((YardArea)i, stride);
+            sprites[i, frame] = Sprite.Create(pixels[i, frame], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+            bossPixels[i, frame] = DrawHunter((YardArea)i, stride);
             // a gold crest makes the bigger bug easy to pick out.
             for (int y = 16; y <= 21; y++)
             for (int x = 16; x <= 21; x++)
                 if (y <= 18 || x == 16 || x == 18 || x == 21)
-                    bossPixels[i].SetPixel(x, y, new Color(1f, 0.80f, 0.15f));
-            bossPixels[i].Apply();
-            bossSprites[i] = Sprite.Create(bossPixels[i], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
+                    bossPixels[i, frame].SetPixel(x, y, new Color(1f, 0.80f, 0.15f));
+            bossPixels[i, frame].Apply();
+            bossSprites[i, frame] = Sprite.Create(bossPixels[i, frame], new Rect(0, 0, 24, 24), new Vector2(0.5f, 0.5f), 32);
         }
     }
 
@@ -149,7 +152,7 @@ public sealed class EnemyWaves : MonoBehaviour
     {
         GameObject body = new GameObject(big ? BossName : EnemyName);
         SpriteRenderer picture = body.AddComponent<SpriteRenderer>();
-        picture.sprite = big ? bossSprites[(int)area] : sprites[(int)area];
+        picture.sprite = big ? bossSprites[(int)area, 0] : sprites[(int)area, 0];
         picture.sortingOrder = big ? 3 : 2;
         body.transform.position = spot;
         body.transform.localScale = Vector3.one * (big ? 1.8f : 1f);
@@ -198,6 +201,7 @@ public sealed class EnemyWaves : MonoBehaviour
     {
         if (bug.warning != null) bug.warning.enabled = false;
         if (Time.time < bug.stunnedUntil) return;
+        if (area == YardArea.FlowerPatch) Animate(bug, 1.8f);
         Vector2 here = bug.picture.transform.position;
         Vector2 chase = ((Vector2)transform.position - here).normalized;
         float speed = 1.35f + (int)area * 0.25f + Mathf.Min((Wave - 1) * 0.12f, 1.4f);
@@ -237,6 +241,7 @@ public sealed class EnemyWaves : MonoBehaviour
     private void MoveBoss()
     {
         if (boss.warning != null) boss.warning.enabled = false;
+        if (area == YardArea.FlowerPatch) Animate(boss, 1.8f);
         if (Time.time < boss.attackAt) boss.aimLocked = false;
         Vector2 chase = ((Vector2)transform.position - (Vector2)boss.picture.transform.position).normalized;
         float extra = Mathf.Min((Wave / 5 - 1) * 0.1f, 0.6f);
@@ -285,9 +290,19 @@ public sealed class EnemyWaves : MonoBehaviour
                 chase.x * Mathf.Sin(angle) + chase.y * Mathf.Cos(angle)) * (speed * Mathf.Min(Time.deltaTime, 0.05f));
             if (backyard.IsBlocked(here + step, space)) continue;
             bug.picture.transform.position = here + step;
+            if (area != YardArea.FlowerPatch && step.sqrMagnitude > 0f) Animate(bug, speed);
             break;
         }
         bug.picture.flipX = chase.x < 0f;
+    }
+
+    private void Animate(Hunter bug, float speed)
+    {
+        // wings keep fluttering while ground bugs only step when they move.
+        bug.stepTime += Time.deltaTime * (area == YardArea.FlowerPatch ? 12f : 7f * speed / 1.8f);
+        int step = Mathf.FloorToInt(bug.stepTime + bug.wobble) % 4;
+        int frame = step == 1 ? 1 : step == 3 ? 2 : 0;
+        bug.picture.sprite = bug == boss ? bossSprites[(int)area, frame] : sprites[(int)area, frame];
     }
 
     private void WarnCharge(Hunter bug, Vector2 chase, float distance, float space)
@@ -389,7 +404,7 @@ public sealed class EnemyWaves : MonoBehaviour
         return false;
     }
 
-    private static Texture2D DrawHunter(YardArea yard)
+    private static Texture2D DrawHunter(YardArea yard, int stride)
     {
         Texture2D dots = new Texture2D(24, 24, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
         Color[] colors = new Color[24 * 24];
@@ -398,16 +413,18 @@ public sealed class EnemyWaves : MonoBehaviour
         {
             if (yard == YardArea.Backyard)
             {
-                colors[y * 24 + x] = AntPixel(x, y);
+                colors[y * 24 + x] = AntPixel(x, y, stride);
                 continue;
             }
             float belly = Mathf.Pow((x - 9f) / (yard == YardArea.PondEdge ? 8f : 6f), 2)
                 + Mathf.Pow((y - 12f) / (yard == YardArea.PondEdge ? 6f : 4f), 2);
             bool head = new Vector2(x - 18, y - 12).sqrMagnitude < 13f;
-            bool legs = (y == 5 || y == 19) && x >= 5 && x <= 16
-                || (x == 6 || x == 11 || x == 16) && y >= 6 && y <= 18;
-            bool wing = yard == YardArea.FlowerPatch && (new Vector2(x - 9, y - 18).sqrMagnitude < 22f
-                || new Vector2(x - 9, y - 6).sqrMagnitude < 22f);
+            int legY = y < 12 ? y : 24 - y;
+            int swing = y < 12 ? stride : -stride;
+            bool legs = AntLine(x, legY, 5, 10, 3 + swing, 5)
+                || AntLine(x, legY, 10, 9, 10 - swing, 4) || AntLine(x, legY, 15, 10, 19 + swing, 5);
+            bool wing = yard == YardArea.FlowerPatch && (new Vector2(x - 9, y - 18f - stride * 0.5f).sqrMagnitude < 22f + stride * 8f
+                || new Vector2(x - 9, y - 6f + stride * 0.5f).sqrMagnitude < 22f + stride * 8f);
             Color shell = yard == YardArea.Backyard ? new Color(0.85f, 0.16f, 0.10f)
                 : yard == YardArea.FlowerPatch ? (x % 6 < 3 ? new Color(1f, 0.78f, 0.12f) : new Color(0.18f, 0.13f, 0.12f))
                 : new Color(0.28f, 0.29f, 0.70f);
@@ -422,16 +439,17 @@ public sealed class EnemyWaves : MonoBehaviour
         return dots;
     }
 
-    private static Color AntPixel(int x, int y)
+    private static Color AntPixel(int x, int y, int stride)
     {
         // separate the abdomen, waist, and head instead of drawing one shell.
         float back = Mathf.Pow((x - 5f) / 4f, 2) + Mathf.Pow((y - 12f) / 3f, 2);
         float middle = Mathf.Pow((x - 12f) / 2.2f, 2) + Mathf.Pow((y - 12f) / 2f, 2);
         float head = Mathf.Pow((x - 19f) / 3f, 2) + Mathf.Pow((y - 12f) / 3f, 2);
         int legY = y < 12 ? y : 24 - y;
-        bool legs = AntLine(x, legY, 10, 11, 8, 8) || AntLine(x, legY, 8, 8, 4, 6)
-            || AntLine(x, legY, 12, 11, 12, 7) || AntLine(x, legY, 12, 7, 10, 3)
-            || AntLine(x, legY, 14, 11, 17, 8) || AntLine(x, legY, 17, 8, 20, 5);
+        int swing = y < 12 ? stride : -stride;
+        bool legs = AntLine(x, legY, 10, 11, 8 + swing, 8) || AntLine(x, legY, 8 + swing, 8, 4 + swing, 6)
+            || AntLine(x, legY, 12, 11, 12 - swing, 7) || AntLine(x, legY, 12 - swing, 7, 10 - swing, 3)
+            || AntLine(x, legY, 14, 11, 17 + swing, 8) || AntLine(x, legY, 17 + swing, 8, 20 + swing, 5);
         bool feelers = AntLine(x, legY, 21, 10, 22, 7) || AntLine(x, legY, 22, 7, 23, 6);
         float body = Mathf.Min(back, Mathf.Min(middle, head));
         if (head < 1f && x == 20 && (y == 11 || y == 13)) return new Color(1f, 0.88f, 0.65f);
@@ -454,12 +472,13 @@ public sealed class EnemyWaves : MonoBehaviour
         if (warningPaint != null) Destroy(warningPaint);
         foreach (Hunter bug in hunters)
             if (bug.picture != null) Destroy(bug.picture.gameObject);
-        for (int i = 0; i < sprites.Length; i++)
+        for (int i = 0; i < 3; i++)
+        for (int frame = 0; frame < 3; frame++)
         {
-            if (sprites[i] != null) Destroy(sprites[i]);
-            if (pixels[i] != null) Destroy(pixels[i]);
-            if (bossSprites[i] != null) Destroy(bossSprites[i]);
-            if (bossPixels[i] != null) Destroy(bossPixels[i]);
+            if (sprites[i, frame] != null) Destroy(sprites[i, frame]);
+            if (pixels[i, frame] != null) Destroy(pixels[i, frame]);
+            if (bossSprites[i, frame] != null) Destroy(bossSprites[i, frame]);
+            if (bossPixels[i, frame] != null) Destroy(bossPixels[i, frame]);
         }
     }
 }
