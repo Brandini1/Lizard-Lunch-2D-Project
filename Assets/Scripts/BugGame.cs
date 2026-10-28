@@ -45,6 +45,7 @@ public sealed class BugGame : MonoBehaviour
     private GUIStyle titleStyle;
     private GUIStyle playStyle;
     private GUIStyle rewardStyle;
+    private GUIStyle challengeStyle;
     private int score;
     private int coins;
     private int runBugs;
@@ -52,6 +53,8 @@ public sealed class BugGame : MonoBehaviour
     private int runBosses;
     private int bestAtStart;
     private readonly int[] bestWaves = new int[3];
+    private int challengeProgress;
+    private bool challengeDone;
     private int tongueLevel = 1;
     private int speedLevel = 1;
     private int cooldownLevel = 1;
@@ -82,6 +85,10 @@ public sealed class BugGame : MonoBehaviour
     private float nextBerryTime;
 
     private bool AllUpgradesMaxed => tongueLevel == MaxLevel && speedLevel == MaxLevel && cooldownLevel == MaxLevel;
+    private int ChallengeGoal => currentArea == YardArea.Backyard ? 5 : currentArea == YardArea.FlowerPatch ? 3 : 4;
+    private int ChallengeReward => currentArea == YardArea.Backyard ? 10 : currentArea == YardArea.FlowerPatch ? 12 : 15;
+    private string ChallengeText => currentArea == YardArea.Backyard ? "Bugs without a hit"
+        : currentArea == YardArea.FlowerPatch ? "Butterflies caught" : "Enemy beetles caught";
 
     private void Start()
     {
@@ -295,6 +302,7 @@ public sealed class BugGame : MonoBehaviour
     {
         if (lizard.IsDashing || Time.time < safeUntil || !waves.TryBite()) return;
         hearts--;
+        if (currentArea == YardArea.Backyard && !challengeDone) challengeProgress = 0;
         sounds.PlayOneShot(biteSound);
         hurtUntil = Time.time + 0.2f;
         safeUntil = Time.time + 1.5f;
@@ -364,6 +372,7 @@ public sealed class BugGame : MonoBehaviour
         coins += rewardAmount;
         runBugs++;
         runCoins += rewardAmount;
+        UpdateChallenge(caughtButterfly, caughtEnemy);
         SaveProgress();
         sounds.PlayOneShot(catchSound);
         caughtThisFlick = true;
@@ -387,6 +396,21 @@ public sealed class BugGame : MonoBehaviour
         float along = Mathf.Clamp01(Vector2.Dot(bugSpot - start, span) / span.sqrMagnitude);
         Vector2 closest = start + span * along;
         return (bugSpot - closest).sqrMagnitude <= 0.12f;
+    }
+
+    private void UpdateChallenge(bool butterflyCaught, bool enemyCaught)
+    {
+        if (challengeDone || currentArea == YardArea.FlowerPatch && !butterflyCaught
+            || currentArea == YardArea.PondEdge && !enemyCaught) return;
+        challengeProgress++;
+        if (challengeProgress < ChallengeGoal) return;
+        // the reward is earned once, even if the player keeps catching bugs.
+        challengeDone = true;
+        coins += ChallengeReward;
+        runCoins += ChallengeReward;
+        shopNotice = $"Challenge done! +{ChallengeReward} coins";
+        noticeUntil = Time.time + 3f;
+        sounds.PlayOneShot(upgradeSound);
     }
 
     private void BuyTongueLength()
@@ -575,6 +599,7 @@ public sealed class BugGame : MonoBehaviour
             playStyle = new GUIStyle(GUI.skin.button) { fontSize = 22 };
             rewardStyle = new GUIStyle(scoreStyle) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
             rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
+            challengeStyle = new GUIStyle(rewardStyle) { fontSize = 18 };
         }
         if (gameOver && !titleOpen)
         {
@@ -585,7 +610,8 @@ public sealed class BugGame : MonoBehaviour
             GUI.Label(new Rect(x + 20, y + 76, 420, 35), $"{AreaName(currentArea)} • Wave {waves.Wave}", rewardStyle);
             GUI.Label(new Rect(x + 20, y + 112, 420, 35), "Hearts: 0/3", rewardStyle);
             GUI.Label(new Rect(x + 20, y + 154, 420, 35), $"Bugs: {runBugs}    Coins earned: {runCoins}", rewardStyle);
-            GUI.Label(new Rect(x + 20, y + 190, 420, 35), $"Bosses beaten: {runBosses}", rewardStyle);
+            string goalResult = challengeDone ? "done" : $"{challengeProgress}/{ChallengeGoal}";
+            GUI.Label(new Rect(x + 20, y + 190, 420, 35), $"Bosses: {runBosses} • Goal: {goalResult}", rewardStyle);
             string record = waves.Wave > bestAtStart ? " • New best!" : "";
             GUI.Label(new Rect(x + 20, y + 226, 420, 35), $"Best wave: {bestWaves[(int)currentArea]}{record}", rewardStyle);
             if (GUI.Button(new Rect(x + 90, y + 286, 280, 44), "Try again", playStyle))
@@ -647,6 +673,12 @@ public sealed class BugGame : MonoBehaviour
         else if (hearts < 3)
             GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
         GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
+        if (!upgradesOpen && waves.BossIntroLeft <= 0f && Time.time >= celebrationUntil)
+        {
+            string goal = challengeDone ? $"Challenge complete! +{ChallengeReward} coins"
+                : $"{ChallengeText}: {challengeProgress}/{ChallengeGoal} • +{ChallengeReward} coins";
+            GUI.Label(new Rect(Screen.width * 0.5f - 300, Screen.height - 266, 600, 30), goal, challengeStyle);
+        }
         if (waves.BossIntroLeft > 0f && !upgradesOpen)
         {
             float x = Screen.width * 0.5f - 220f;
@@ -764,6 +796,8 @@ public sealed class BugGame : MonoBehaviour
         if (newRun)
         {
             runBugs = runCoins = runBosses = 0;
+            challengeProgress = 0;
+            challengeDone = false;
             bestAtStart = bestWaves[(int)area];
             lizard.ResetDash();
             berry.SetActive(false);
