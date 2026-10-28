@@ -46,6 +46,10 @@ public sealed class BugGame : MonoBehaviour
     private GUIStyle playStyle;
     private GUIStyle rewardStyle;
     private GUIStyle challengeStyle;
+    private GUIStyle shopText, shopHeading, shopButton;
+    private int boughtCard;
+    private float boughtAt, shopClosedUntil;
+    public bool BlocksTongue => upgradesOpen || Time.unscaledTime < shopClosedUntil;
     private int score;
     private int coins;
     private int runBugs;
@@ -153,6 +157,11 @@ public sealed class BugGame : MonoBehaviour
         }
         if (keys != null && keys.escapeKey.wasPressedThisFrame)
         {
+            if (upgradesOpen)
+            {
+                SetShop(false);
+                return;
+            }
             paused = !paused;
             Time.timeScale = paused ? 0f : 1f;
         }
@@ -160,8 +169,8 @@ public sealed class BugGame : MonoBehaviour
 
         if (keys != null)
         {
-            if (keys.spaceKey.wasPressedThisFrame) lizard.TryDash();
-            if (keys.eKey.wasPressedThisFrame) upgradesOpen = !upgradesOpen;
+            if (!upgradesOpen && keys.spaceKey.wasPressedThisFrame) lizard.TryDash();
+            if (keys.eKey.wasPressedThisFrame) SetShop(!upgradesOpen);
             if (upgradesOpen)
             {
                 if (keys.digit1Key.wasPressedThisFrame) BuyTongueLength();
@@ -169,6 +178,8 @@ public sealed class BugGame : MonoBehaviour
                 if (keys.digit3Key.wasPressedThisFrame) BuyTongueCooldown();
             }
         }
+
+        if (upgradesOpen) return;
 
         MoveAnt();
         MoveBeetle();
@@ -322,7 +333,7 @@ public sealed class BugGame : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (paused || titleOpen || gameOver) return;
+        if (paused || titleOpen || gameOver || upgradesOpen) return;
         if (!tongue.IsOut)
         {
             caughtThisFlick = false;
@@ -379,7 +390,7 @@ public sealed class BugGame : MonoBehaviour
         if (caughtEnemy && waves.UpgradeBreak)
         {
             runBosses++;
-            upgradesOpen = true;
+            SetShop(true);
             sounds.PlayOneShot(upgradeSound);
         }
         if (caughtFly) MoveFly();
@@ -417,6 +428,9 @@ public sealed class BugGame : MonoBehaviour
     {
         if (!SpendOn(tongueLevel)) return;
         tongueLevel++;
+        boughtCard = 1;
+        boughtAt = Time.unscaledTime;
+        shopNotice = "Longer tongue upgraded!";
         tongue.Reach += 0.5f;
         SaveProgress();
         CelebrateMaxed();
@@ -426,6 +440,9 @@ public sealed class BugGame : MonoBehaviour
     {
         if (!SpendOn(speedLevel)) return;
         speedLevel++;
+        boughtCard = 2;
+        boughtAt = Time.unscaledTime;
+        shopNotice = "Faster feet upgraded!";
         lizard.MoveSpeed += 0.5f;
         SaveProgress();
         CelebrateMaxed();
@@ -435,6 +452,9 @@ public sealed class BugGame : MonoBehaviour
     {
         if (!SpendOn(cooldownLevel)) return;
         cooldownLevel++;
+        boughtCard = 3;
+        boughtAt = Time.unscaledTime;
+        shopNotice = "Quick flick upgraded!";
         tongue.CooldownSeconds -= 0.04f;
         SaveProgress();
         CelebrateMaxed();
@@ -666,8 +686,12 @@ public sealed class BugGame : MonoBehaviour
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = oldColor;
         }
-        GUI.Label(new Rect(20, 16, 400, 40), $"Bugs: {score}    Coins: {coins}", scoreStyle);
-        GUI.Label(new Rect(Screen.width - 190, 16, 180, 40), $"Hearts: {hearts}/3", rewardStyle);
+        Paint(new Rect(12, 12, 340, 44), new Color(0.06f, 0.12f, 0.1f, 0.92f));
+        Paint(new Rect(12, 12, 4, 44), new Color(1f, 0.8f, 0.28f));
+        GUI.Label(new Rect(24, 16, 320, 36), $"{coins} coins   •   {score} bugs", rewardStyle);
+        Paint(new Rect(Screen.width - 176, 12, 164, 44), new Color(0.06f, 0.12f, 0.1f, 0.92f));
+        for (int i = 0; i < 3; i++)
+            DrawHeart(new Vector2(Screen.width - 158 + i * 48, 24), i < hearts);
         if (Time.time < safeUntil)
             GUI.Label(new Rect(Screen.width - 190, 52, 180, 30), "Recovering...", rewardStyle);
         else if (hearts < 3)
@@ -703,7 +727,7 @@ public sealed class BugGame : MonoBehaviour
             DrawMeter(new Rect(Screen.width * 0.5f - 160, Screen.height - 175, 320, 10),
                 waves.BossHealth / (float)waves.BossMaxHealth, new Color(0.95f, 0.23f, 0.12f));
         }
-        if (waves.UpgradeBreak && GUI.Button(new Rect(Screen.width * 0.5f - 110, Screen.height - 108, 220, 44),
+        if (waves.UpgradeBreak && !upgradesOpen && GUI.Button(new Rect(Screen.width * 0.5f - 110, Screen.height - 108, 220, 44),
             "Next wave", playStyle))
         {
             waves.ContinueAfterBoss();
@@ -764,15 +788,121 @@ public sealed class BugGame : MonoBehaviour
             GUI.Label(new Rect(x + 10, y + 12, 420, 45), "Master Lizard!", titleStyle);
             GUI.Label(new Rect(x + 10, y + 58, 420, 35), "All upgrades maxed. Keep catching bugs!", rewardStyle);
         }
-        if (!upgradesOpen) return;
-
-        GUI.Label(new Rect(20, 88, 720, 40), UpgradeLine(1, "Longer tongue", tongueLevel), scoreStyle);
-        GUI.Label(new Rect(20, 124, 720, 40), UpgradeLine(2, "Faster feet", speedLevel), scoreStyle);
-        GUI.Label(new Rect(20, 160, 720, 40), UpgradeLine(3, "Shorter cooldown", cooldownLevel), scoreStyle);
+        if (upgradesOpen) DrawShop();
     }
 
-    private static string UpgradeLine(int key, string name, int level) => level >= MaxLevel
-        ? $"{key}: {name} (max)" : $"{key}: {name} - {level + 2} coins (Lv {level})";
+    private void SetShop(bool open)
+    {
+        upgradesOpen = open;
+        Time.timeScale = open ? 0f : 1f;
+        // closing a button shouldn't also shoot the tongue.
+        if (!open) shopClosedUntil = Time.unscaledTime + 0.15f;
+    }
+
+    private void DrawShop()
+    {
+        if (shopText == null)
+        {
+            shopText = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            shopText.normal.textColor = new Color(0.76f, 0.85f, 0.78f);
+            shopHeading = new GUIStyle(shopText) { fontSize = 25, fontStyle = FontStyle.Bold };
+            shopHeading.normal.textColor = Color.white;
+            shopButton = new GUIStyle(shopText) { fontSize = 18, fontStyle = FontStyle.Bold };
+            shopButton.normal.textColor = Color.white;
+        }
+        Paint(new Rect(0, 0, Screen.width, Screen.height), new Color(0.02f, 0.05f, 0.04f, 0.85f));
+        // one small canvas keeps the cards together on smaller screens.
+        Matrix4x4 oldMatrix = GUI.matrix;
+        float scale = Mathf.Min(1f, Screen.width / 920f, Screen.height / 570f);
+        GUI.matrix = Matrix4x4.TRS(new Vector3((Screen.width - 880 * scale) * 0.5f,
+            (Screen.height - 530 * scale) * 0.5f, 0), Quaternion.identity, Vector3.one * scale);
+        Paint(new Rect(0, 0, 880, 530), new Color(0.08f, 0.15f, 0.12f));
+        Paint(new Rect(0, 0, 880, 4), new Color(0.64f, 0.9f, 0.35f));
+        GUI.Label(new Rect(24, 18, 832, 42), "THE LUNCH CLUB", titleStyle);
+        GUI.Label(new Rect(24, 62, 832, 28), waves.UpgradeBreak
+            ? "Boss beaten. Treat yourself before the next wave." : "A little stronger. A lot hungrier. • Game paused", shopText);
+        GUI.Label(new Rect(24, 98, 832, 30), $"{coins} COINS   •   {tongueLevel + speedLevel + cooldownLevel - 3}/12 upgrades bought", rewardStyle);
+        UpgradeCard(1, "Longer tongue", "Reach the snacks that got away.", tongueLevel,
+            tongue.Reach, 0.5f, "reach", new Color(1f, 0.48f, 0.65f));
+        UpgradeCard(2, "Faster feet", "Chase lunch. Outrun trouble.", speedLevel,
+            lizard.MoveSpeed, 0.5f, "speed", new Color(0.5f, 0.88f, 0.35f));
+        UpgradeCard(3, "Quick flick", "Less waiting between bites.", cooldownLevel,
+            tongue.CooldownSeconds, -0.04f, "sec cooldown", new Color(0.36f, 0.8f, 1f));
+        string hint = AllUpgradesMaxed ? "MASTER LIZARD • Every upgrade is yours!"
+            : Time.time < noticeUntil ? shopNotice : "Click a card's button or press 1, 2, 3 to buy.";
+        GUI.Label(new Rect(24, 432, 832, 30), hint, shopText);
+        if (ShopButton(new Rect(280, 474, 320, 38), waves.UpgradeBreak ? "Next wave  →" : "Back to the hunt  •  E",
+            new Color(0.26f, 0.45f, 0.22f), true))
+        {
+            if (waves.UpgradeBreak) { waves.ContinueAfterBoss(); RecordWave(); }
+            SetShop(false);
+        }
+        GUI.matrix = oldMatrix;
+    }
+
+    private void UpgradeCard(int key, string name, string description, int level, float value, float step, string unit, Color tint)
+    {
+        float x = 24 + (key - 1) * 282;
+        bool maxed = level >= MaxLevel;
+        float flash = boughtCard == key ? Mathf.Clamp01(1f - (Time.unscaledTime - boughtAt) / 0.8f) : 0f;
+        Paint(new Rect(x, 146, 268, 276), Color.Lerp(new Color(0.12f, 0.21f, 0.17f), tint * 0.65f, flash));
+        Paint(new Rect(x, 146, 268, 4), tint);
+        GUI.Label(new Rect(x + 12, 162, 244, 35), name, shopHeading);
+        // tiny pixel icons use the same colors as the readiness bars.
+        if (key == 1)
+        {
+            Paint(new Rect(x + 92, 217, 78, 6), tint);
+            Paint(new Rect(x + 158, 211, 12, 18), tint);
+        }
+        else for (int i = 0; i < 3; i++)
+        {
+            float iconX = x + 98 + i * 24;
+            Paint(new Rect(iconX, 207 + (i % 2) * 8, key == 2 ? 12 : 6, 23), tint);
+            if (key == 3) Paint(new Rect(iconX - 5, 217, 16, 5), tint);
+        }
+        GUI.Label(new Rect(x + 12, 240, 244, 38), description, shopText);
+        for (int i = 0; i < MaxLevel; i++)
+            Paint(new Rect(x + 44 + i * 37, 282, 32, 7), i < level ? tint : new Color(0.22f, 0.3f, 0.25f));
+        GUI.Label(new Rect(x + 12, 296, 244, 26), $"LEVEL {level} / {MaxLevel}", shopText);
+        string stat = maxed ? $"{value:0.##} {unit} • MAXED"
+            : $"{value:0.##} → {Mathf.Max(0, value + step):0.##} {unit}";
+        GUI.Label(new Rect(x + 12, 325, 244, 26), stat, shopText);
+        int cost = level + 2;
+        string label = maxed ? "Fully upgraded" : coins < cost ? $"Need {cost - coins} more coins" : $"[{key}] Upgrade • {cost} coins";
+        if (!ShopButton(new Rect(x + 16, 366, 236, 40), label, tint * 0.65f, !maxed && coins >= cost)) return;
+        if (key == 1) BuyTongueLength();
+        else if (key == 2) BuyMovementSpeed();
+        else BuyTongueCooldown();
+    }
+
+    private bool ShopButton(Rect box, string label, Color tint, bool available)
+    {
+        bool hover = available && box.Contains(Event.current.mousePosition);
+        Paint(box, available ? Color.Lerp(tint, Color.white, hover ? 0.15f : 0f) : new Color(0.19f, 0.25f, 0.21f));
+        bool oldEnabled = GUI.enabled;
+        GUI.enabled = oldEnabled && available;
+        bool clicked = GUI.Button(box, label, shopButton);
+        GUI.enabled = oldEnabled;
+        return clicked;
+    }
+
+    private static void DrawHeart(Vector2 spot, bool full)
+    {
+        Color tint = full ? new Color(1f, 0.4f, 0.48f) : new Color(0.26f, 0.32f, 0.28f);
+        Paint(new Rect(spot.x, spot.y, 12, 8), tint);
+        Paint(new Rect(spot.x + 18, spot.y, 12, 8), tint);
+        Paint(new Rect(spot.x, spot.y + 8, 30, 6), tint);
+        Paint(new Rect(spot.x + 6, spot.y + 14, 18, 6), tint);
+        Paint(new Rect(spot.x + 12, spot.y + 20, 6, 5), tint);
+    }
+
+    private static void Paint(Rect box, Color tint)
+    {
+        Color old = GUI.color;
+        GUI.color = tint;
+        GUI.DrawTexture(box, Texture2D.whiteTexture);
+        GUI.color = old;
+    }
 
     private static void DrawMeter(Rect box, float fill, Color color)
     {

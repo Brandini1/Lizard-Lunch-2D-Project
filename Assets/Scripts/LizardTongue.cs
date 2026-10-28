@@ -53,7 +53,8 @@ public sealed class LizardTongue : MonoBehaviour
         if (Time.timeScale == 0f) return;
         Mouse mouse = Mouse.current;
         if (mouse != null && mouse.leftButton.wasPressedThisFrame &&
-            !isShooting && Time.time >= nextShotTime)
+            !isShooting && Time.time >= nextShotTime &&
+            !(GetComponent<BugGame>()?.BlocksTongue ?? false))
         {
             shotDirection = lizardMovement.FacingDirection;
             shotTime = 0f;
