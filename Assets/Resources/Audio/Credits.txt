@@ -1,0 +1,24 @@
+LIZARD LUNCH - AUDIO CREDITS
+
+Music by Preston Peak (PPEAK)
+Chiptune Adventure Music Pack [FREE]
+https://ppeak.itch.io/chip-free
+
+"secret base" - exploration and menus
+"ahead, a dark path" - boss arrival
+"fated encounter" - boss battles
+
+Licensed under Creative Commons Attribution 4.0:
+https://creativecommons.org/licenses/by/4.0/
+Original MP3 recordings, renamed only. No musical edits.
+
+Sound effects by Kenney
+https://kenney.nl/assets/interface-sounds
+https://kenney.nl/assets/music-jingles
+Creative Commons Zero (CC0):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+click_001: menu clicks; confirmation_001: upgrades
+jingles_NES00: wave clear; NES07: boss win; NES10: game over
+Original OGG recordings, renamed only.
+Full Kenney notices are included beside this file.

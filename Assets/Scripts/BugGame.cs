@@ -37,6 +37,8 @@ public sealed class BugGame : MonoBehaviour
     private Vector2 butterflyTarget;
     private float butterflyRestUntil;
     private AudioSource sounds;
+    private LunchAudio soundtrack;
+    private bool waveWasResting, creditsOpen;
     private AudioClip flickSound;
     private AudioClip catchSound;
     private AudioClip upgradeSound;
@@ -100,6 +102,7 @@ public sealed class BugGame : MonoBehaviour
         tongue = GetComponent<LizardTongue>();
         lizard = GetComponent<LizardMovement>();
         LoadProgress();
+        soundtrack = gameObject.AddComponent<LunchAudio>();
         sounds = gameObject.AddComponent<AudioSource>();
         sounds.playOnAwake = false;
         sounds.spatialBlend = 0f;
@@ -147,10 +150,18 @@ public sealed class BugGame : MonoBehaviour
 
     private void Update()
     {
+        int mood = gameOver && !titleOpen ? 3 : titleOpen || waves.UpgradeBreak ? 0
+            : waves.BossAlive ? 2 : waves.IsBossWave ? 1 : 0;
+        soundtrack.SetMood(mood, paused || titleOpen || upgradesOpen);
+        sounds.mute = soundtrack.Muted;
+        bool resting = waves.BreakLeft > 0f;
+        if (resting && !waveWasResting && !gameOver && !titleOpen) soundtrack.WaveClear();
+        waveWasResting = resting;
         if (gameOver && !titleOpen) return;
         Keyboard keys = Keyboard.current;
         if (titleOpen)
         {
+            if (creditsOpen) return;
             if (keys != null && (keys.enterKey.wasPressedThisFrame || keys.spaceKey.wasPressedThisFrame))
                 StartGame(YardArea.Backyard);
             return;
@@ -324,6 +335,7 @@ public sealed class BugGame : MonoBehaviour
         if (hearts > 0) return;
         // the third bite ends the run until the player retries.
         gameOver = true;
+        soundtrack.GameOver();
         upgradesOpen = false;
         tongue.enabled = false;
         lizard.ResetDash();
@@ -391,7 +403,7 @@ public sealed class BugGame : MonoBehaviour
         {
             runBosses++;
             SetShop(true);
-            sounds.PlayOneShot(upgradeSound);
+            soundtrack.BossWin();
         }
         if (caughtFly) MoveFly();
         else if (caughtAnt) RespawnAnt();
@@ -480,7 +492,7 @@ public sealed class BugGame : MonoBehaviour
         }
         coins -= level + 2;
         shopNotice = "Upgrade bought!";
-        sounds.PlayOneShot(upgradeSound);
+        soundtrack.Purchase();
         return true;
     }
 
@@ -621,6 +633,17 @@ public sealed class BugGame : MonoBehaviour
             rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
             challengeStyle = new GUIStyle(rewardStyle) { fontSize = 18 };
         }
+        if (creditsOpen)
+        {
+            float width = Mathf.Min(660, Screen.width - 24);
+            float height = Mathf.Min(530, Screen.height - 24);
+            Rect box = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
+            Paint(new Rect(0, 0, Screen.width, Screen.height), new Color(0.04f, 0.09f, 0.06f));
+            GUI.TextArea(new Rect(box.x, box.y, box.width, box.height - 50), Resources.Load<TextAsset>("Audio/Credits").text);
+            if (GUI.Button(new Rect(box.center.x - 90, box.yMax - 42, 180, 36), "Back", playStyle))
+            { creditsOpen = false; soundtrack.Click(); }
+            return;
+        }
         if (gameOver && !titleOpen)
         {
             float x = Screen.width * 0.5f - 230f;
@@ -662,6 +685,8 @@ public sealed class BugGame : MonoBehaviour
             if (AllUpgradesMaxed) areaHint = "All upgrades maxed!";
             GUI.Label(new Rect(x + 80, y + 342, 300, 32), areaHint,
                 AllUpgradesMaxed ? rewardStyle : GUI.skin.label);
+            if (GUI.Button(new Rect(x + 50, y + 402, 320, 28), "Audio credits • M: mute / unmute"))
+            { creditsOpen = true; soundtrack.Click(); }
             return;
         }
         if (paused)
@@ -794,6 +819,7 @@ public sealed class BugGame : MonoBehaviour
     private void SetShop(bool open)
     {
         upgradesOpen = open;
+        soundtrack.Click();
         Time.timeScale = open ? 0f : 1f;
         // closing a button shouldn't also shoot the tongue.
         if (!open) shopClosedUntil = Time.unscaledTime + 0.15f;
@@ -883,6 +909,7 @@ public sealed class BugGame : MonoBehaviour
         GUI.enabled = oldEnabled && available;
         bool clicked = GUI.Button(box, label, shopButton);
         GUI.enabled = oldEnabled;
+        if (clicked) soundtrack.Click();
         return clicked;
     }
 
@@ -917,6 +944,9 @@ public sealed class BugGame : MonoBehaviour
 
     private void StartGame(YardArea area)
     {
+        soundtrack.Click();
+        creditsOpen = false;
+        waveWasResting = false;
         noticeUntil = 0f;
         rewardAmount = 0;
         combo = 0;
