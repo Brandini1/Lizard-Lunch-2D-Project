@@ -48,6 +48,7 @@ public sealed class BugGame : MonoBehaviour
     private GUIStyle playStyle;
     private GUIStyle rewardStyle;
     private GUIStyle challengeStyle;
+    private GUIStyle hudText;
     private GUIStyle shopText, shopHeading, shopButton;
     private int boughtCard;
     private float boughtAt, shopClosedUntil;
@@ -632,6 +633,8 @@ public sealed class BugGame : MonoBehaviour
             rewardStyle = new GUIStyle(scoreStyle) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
             rewardStyle.normal.textColor = new Color(1f, 0.88f, 0.25f);
             challengeStyle = new GUIStyle(rewardStyle) { fontSize = 18 };
+            hudText = new GUIStyle(challengeStyle);
+            hudText.normal.textColor = Color.white;
         }
         if (creditsOpen)
         {
@@ -691,17 +694,7 @@ public sealed class BugGame : MonoBehaviour
         }
         if (paused)
         {
-            float middleX = Screen.width * 0.5f;
-            float middleY = Screen.height * 0.5f;
-            GUI.Box(new Rect(middleX - 180, middleY - 105, 360, 210), "");
-            GUI.Label(new Rect(middleX - 80, middleY - 85, 200, 45), "Paused", scoreStyle);
-            GUI.Label(new Rect(middleX - 110, middleY - 30, 250, 45), "Esc: resume", scoreStyle);
-            if (GUI.Button(new Rect(middleX - 120, middleY + 32, 240, 48), "Main menu", playStyle))
-            {
-                paused = false;
-                titleOpen = true;
-                upgradesOpen = false;
-            }
+            DrawPauseMenu();
             return;
         }
         if (Time.time < hurtUntil)
@@ -711,74 +704,41 @@ public sealed class BugGame : MonoBehaviour
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = oldColor;
         }
-        Paint(new Rect(12, 12, 340, 44), new Color(0.06f, 0.12f, 0.1f, 0.92f));
-        Paint(new Rect(12, 12, 4, 44), new Color(1f, 0.8f, 0.28f));
-        GUI.Label(new Rect(24, 16, 320, 36), $"{coins} coins   •   {score} bugs", rewardStyle);
-        Paint(new Rect(Screen.width - 176, 12, 164, 44), new Color(0.06f, 0.12f, 0.1f, 0.92f));
-        for (int i = 0; i < 3; i++)
-            DrawHeart(new Vector2(Screen.width - 158 + i * 48, 24), i < hearts);
-        if (Time.time < safeUntil)
-            GUI.Label(new Rect(Screen.width - 190, 52, 180, 30), "Recovering...", rewardStyle);
-        else if (hearts < 3)
-            GUI.Label(new Rect(Screen.width - 240, 52, 230, 30), "Berries heal you", rewardStyle);
-        GUI.Label(new Rect(20, 52, 400, 40), upgradesOpen ? "E: close upgrades" : "E: upgrades", scoreStyle);
-        if (!upgradesOpen && waves.BossIntroLeft <= 0f && Time.time >= celebrationUntil)
-        {
-            string goal = challengeDone ? $"Challenge complete! +{ChallengeReward} coins"
-                : $"{ChallengeText}: {challengeProgress}/{ChallengeGoal} • +{ChallengeReward} coins";
-            GUI.Label(new Rect(Screen.width * 0.5f - 300, Screen.height - 266, 600, 30), goal, challengeStyle);
-        }
-        if (waves.BossIntroLeft > 0f && !upgradesOpen)
-        {
-            float x = Screen.width * 0.5f - 220f;
-            float y = Screen.height * 0.28f;
-            Color oldColor = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, Mathf.Min(1f, waves.BossIntroLeft));
-            GUI.Box(new Rect(x, y, 440, 100), "");
-            GUI.Label(new Rect(x + 10, y + 8, 420, 45), $"Boss wave {waves.Wave}", titleStyle);
-            GUI.Label(new Rect(x + 10, y + 54, 420, 35), waves.BossName, rewardStyle);
-            GUI.color = oldColor;
-        }
-        string waveLine = waves.UpgradeBreak ? "Boss beaten! Spend your bonus coins."
-            : waves.BossAlive ? $"Wave {waves.Wave} • {waves.BossName}: {waves.BossHealth}/{waves.BossMaxHealth}"
-            : waves.BreakLeft > 0f
-            ? $"Wave {waves.Wave} cleared! Next in {Mathf.CeilToInt(waves.BreakLeft)}s"
-            : waves.IsBossWave ? $"Wave {waves.Wave} • {waves.BossName} incoming!"
-            : $"Wave {waves.Wave} • {waves.EnemyName}: {waves.Remaining} left";
-        GUI.Label(new Rect(Screen.width * 0.5f - 240, Screen.height - 155, 480, 35), waveLine, rewardStyle);
+        if (upgradesOpen) { DrawShop(); return; }
+
+        // keep the useful bits at the edges and leave the hunting space clear.
+        Paint(new Rect(12, 12, 124, 68), new Color(0.06f, 0.12f, 0.1f, 0.85f));
+        for (int i = 0; i < 3; i++) DrawHeart(new Vector2(20 + i * 36, 20), i < hearts);
+        GUI.Label(new Rect(16, 48, 116, 26), $"{coins} coins", challengeStyle);
+        string waveLine = $"Wave {waves.Wave} • {waves.Remaining} left";
+        if (waves.BossAlive) waveLine = $"Wave {waves.Wave} • {waves.BossName}";
+        else if (waves.IsBossWave && !waves.UpgradeBreak) waveLine = $"Wave {waves.Wave} • Boss incoming";
+        else if (waves.BreakLeft > 0f) waveLine = $"Wave {waves.Wave} • Next in {Mathf.CeilToInt(waves.BreakLeft)}s";
+        else if (waves.UpgradeBreak) waveLine = $"Wave {waves.Wave} cleared";
+        GUI.Label(new Rect(Screen.width * 0.5f - 130, 12, 260, 28), waveLine, hudText);
         if (waves.BossAlive)
-        {
-            GUI.Label(new Rect(Screen.width * 0.5f - 280, Screen.height - 220, 560, 35), waves.BossHint, rewardStyle);
-            DrawMeter(new Rect(Screen.width * 0.5f - 160, Screen.height - 175, 320, 10),
+            DrawMeter(new Rect(Screen.width * 0.5f - 100, 44, 200, 6),
                 waves.BossHealth / (float)waves.BossMaxHealth, new Color(0.95f, 0.23f, 0.12f));
-        }
-        if (waves.UpgradeBreak && !upgradesOpen && GUI.Button(new Rect(Screen.width * 0.5f - 110, Screen.height - 108, 220, 44),
+        else if (waves.BreakLeft > 3f)
+            HudNotice("Wave cleared!", new Rect(Screen.width * 0.5f - 100, 42, 200, 26), waves.BreakLeft - 3f);
+        else if (waves.BossIntroLeft > 0f)
+            HudNotice("Boss wave!", new Rect(Screen.width * 0.5f - 100, 42, 200, 26), waves.BossIntroLeft);
+
+        if (waves.UpgradeBreak && GUI.Button(new Rect(Screen.width * 0.5f - 90, Screen.height - 64, 180, 36),
             "Next wave", playStyle))
         {
             waves.ContinueAfterBoss();
             RecordWave();
-            upgradesOpen = false;
         }
-        float ready = tongue.Readiness;
-        GUI.Label(new Rect(20, Screen.height - 68, 300, 30),
-            ready >= 1f ? "Tongue ready • click" : tongue.IsOut ? "Catch it!" : "Getting ready...", rewardStyle);
-        DrawMeter(new Rect(24, Screen.height - 30, 280, 10), ready, new Color(1f, 0.49f, 0.65f));
-        float dashReady = lizard.DashReadiness;
-        GUI.Label(new Rect(Screen.width - 300, Screen.height - 68, 280, 30),
-            lizard.IsDashing ? "Dodging!" : dashReady >= 1f ? "Dash ready • Space" : "Dash recharging...", rewardStyle);
-        DrawMeter(new Rect(Screen.width - 304, Screen.height - 30, 280, 10), dashReady,
+        DrawMeter(new Rect(18, Screen.height - 24, 112, 7), tongue.Readiness, new Color(1f, 0.49f, 0.65f));
+        DrawMeter(new Rect(Screen.width - 130, Screen.height - 24, 112, 7), lizard.DashReadiness,
             new Color(0.4f, 0.95f, 1f));
-        if (Time.time < noticeUntil && !waves.UpgradeBreak)
-            GUI.Label(new Rect(Screen.width * 0.5f - 180, Screen.height - 108, 360, 35), shopNotice, rewardStyle);
-        float comboLeft = ComboSeconds - (Time.time - lastCatchTime);
-        if (combo >= 2 && comboLeft > 0f)
-        {
-            string bonus = combo >= 3 ? "  +1 coin per catch" : "";
-            GUI.Label(new Rect(20, upgradesOpen ? 196 : 88, 540, 40),
-                $"Combo x{combo}  {comboLeft:0.0}s{bonus}", scoreStyle);
-            DrawMeter(new Rect(24, upgradesOpen ? 236 : 128, 240, 6), comboLeft / ComboSeconds,
-                new Color(1f, 0.88f, 0.25f));
-        }
+        if (Time.time < celebrationUntil)
+            HudNotice("Master Lizard!", new Rect(Screen.width * 0.5f - 180, Screen.height - 100, 360, 26), celebrationUntil - Time.time);
+        else if (Time.time < noticeUntil && !waves.UpgradeBreak)
+            HudNotice(shopNotice, new Rect(Screen.width * 0.5f - 180, Screen.height - 100, 360, 26), noticeUntil - Time.time);
+        if (combo >= 2 && Time.time - lastCatchTime < 1f)
+            HudNotice($"x{combo} combo", new Rect(12, 82, 124, 26), 1f - (Time.time - lastCatchTime));
         if (rewardAmount > 0 && Time.time - rewardStarted < 0.9f)
         {
             Camera view = Camera.main;
@@ -801,19 +761,49 @@ public sealed class BugGame : MonoBehaviour
                 }
                 GUI.color = new Color(1f, 1f, 1f, fade);
                 GUI.Label(new Rect(screen.x - 65f, Screen.height - screen.y - 40f * (1f - fade), 130f, 35f),
-                    $"+{rewardAmount} coins", rewardStyle);
+                    $"+{rewardAmount}", challengeStyle);
                 GUI.color = oldColor;
             }
         }
-        if (Time.time < celebrationUntil)
+    }
+
+    private void HudNotice(string text, Rect box, float secondsLeft)
+    {
+        Color old = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(secondsLeft / 0.5f));
+        GUI.Label(box, text, challengeStyle);
+        GUI.color = old;
+    }
+
+    private void DrawPauseMenu()
+    {
+        Matrix4x4 old = GUI.matrix;
+        float scale = Mathf.Min(1f, Screen.width / 540f, Screen.height / 440f);
+        GUI.matrix = Matrix4x4.TRS(new Vector3((Screen.width - 500 * scale) * 0.5f,
+            (Screen.height - 400 * scale) * 0.5f, 0), Quaternion.identity, Vector3.one * scale);
+        Paint(new Rect(0, 0, 500, 400), new Color(0.06f, 0.12f, 0.1f, 0.98f));
+        GUI.Label(new Rect(20, 12, 460, 50), "Paused", titleStyle);
+        GUI.Label(new Rect(20, 72, 460, 28), "WASD / arrows: move   •   Click: tongue", hudText);
+        GUI.Label(new Rect(20, 104, 460, 28), "Space: dash   •   E: upgrades   •   M: sound", hudText);
+        GUI.Label(new Rect(20, 140, 460, 28), "Pink meter: tongue   •   Blue meter: dash", hudText);
+        GUI.Label(new Rect(20, 172, 460, 28), "Berries restore a heart. Three hits ends the run.", hudText);
+        string goal = challengeDone ? $"Challenge complete! +{ChallengeReward} coins"
+            : $"{ChallengeText}: {challengeProgress}/{ChallengeGoal} • +{ChallengeReward} coins";
+        GUI.Label(new Rect(20, 218, 460, 28), goal, challengeStyle);
+        GUI.Label(new Rect(20, 252, 460, 28), waves.BossAlive ? waves.BossHint : $"Total bugs caught: {score}", hudText);
+        if (GUI.Button(new Rect(30, 324, 210, 44), "Resume • Esc", playStyle))
         {
-            float x = Screen.width * 0.5f - 220f;
-            float y = Screen.height - 270f;
-            GUI.Box(new Rect(x, y, 440, 110), "");
-            GUI.Label(new Rect(x + 10, y + 12, 420, 45), "Master Lizard!", titleStyle);
-            GUI.Label(new Rect(x + 10, y + 58, 420, 35), "All upgrades maxed. Keep catching bugs!", rewardStyle);
+            paused = false;
+            Time.timeScale = 1f;
+            shopClosedUntil = Time.unscaledTime + 0.15f;
         }
-        if (upgradesOpen) DrawShop();
+        if (GUI.Button(new Rect(260, 324, 210, 44), "Main menu", playStyle))
+        {
+            paused = false;
+            titleOpen = true;
+            upgradesOpen = false;
+        }
+        GUI.matrix = old;
     }
 
     private void SetShop(bool open)
